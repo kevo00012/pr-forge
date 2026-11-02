@@ -16,7 +16,7 @@ Philosophy: **Make logging effortless. Make progress obvious. Keep the lifter in
   - Copies of the screen designs are in `design/` (`*.dc.html`). They are design mockups, not app code: read them for layout, type, spacing, and colours.
   - `tools/serve.js`: local dev server (`node tools/serve.js` → http://localhost:8000/; `pr-forge` in `.claude/launch.json`).
 - Repo: https://github.com/kevo00012/pr-forge (public, branch `main`). Commits use the GitHub no-reply email, set in this repo's git config. Never commit backups or Fitbod exports; `.gitignore` blocks them.
-- Hosting plan: GitHub Pages → https://kevo00012.github.io/pr-forge/ (Pages not switched on yet; task 7).
+- Hosting: GitHub Pages, live at https://kevo00012.github.io/pr-forge/ since 1 Nov 2026. It deploys from `main` (root) on every push, so anything pushed goes live.
 
 ## Decisions (from the PRD, answered by Kevin)
 
@@ -55,7 +55,7 @@ Philosophy: **Make logging effortless. Make progress obvious. Keep the lifter in
 4. Bundle free-exercise-db once `exercises.json` is in this folder.
 5. Fitbod CSV import once Kevin adds an export file.
 6. First-open setup that explains itself for friends.
-7. Publish to GitHub Pages.
+7. Done (1 Nov 2026): published to GitHub Pages. Still to confirm: airplane-mode test on an iPhone. Share with friends once logo, plate calculator, editing and first-open setup are in.
 
 ## How Kevin wants code work done
 

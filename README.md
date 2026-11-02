@@ -4,7 +4,7 @@ A phone-first strength-training log that runs in the browser. No app store, no a
 
 > Make logging effortless. Make progress obvious. Keep the lifter in control.
 
-Planned address: **https://kevo00012.github.io/pr-forge/**
+Live at: **https://kevo00012.github.io/pr-forge/**
 
 ## What's in it
 

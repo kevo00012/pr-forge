@@ -5,16 +5,20 @@
 (function () {
   'use strict';
 
-  var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises;
-  var VERSION = '1.3.0';
+  var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers;
+  var VERSION = '1.4.0';
 
   var S = ST.load();
   var V = {
     tab: 'home',          // home | workouts | progress | history
-    screen: null,         // null | 'workout' | 'template' | 'historyDetail'
+    screen: null,         // null | 'workout' | 'template' | 'historyDetail' | 'editWorkout' | 'lift'
     historyId: null,
     tplDraft: null,       // { id|null, name, exercises: [{exerciseId, sets}] }
-    picker: null,         // { target: 'workout'|'template', q, muscle, selected: {} }
+    picker: null,         // { target: 'workout'|'template'|'swap'|'edit', q, muscle, selected: {} }
+    edit: null,           // { draft, original } while changing a past workout
+    liftId: null,         // exercise shown on the lift detail screen
+    liftRange: 'recent',  // 'recent' (6 weeks) | 'all'
+    typeEntry: null,      // workout entry whose logging type is being chosen
     rest: null,           // { endsAt, total }
     prShown: {},          // set id -> "weight x reps" that showed a PR banner
     prMoment: null,       // the full-screen PR panel being shown (see buildPrMoment)
@@ -127,30 +131,110 @@
     var last = M.lastSessionFor(S.workouts, exerciseId, excludeWorkoutId);
     var hasWorking = last && last.sets.some(function (s) { return !s.warmup; });
     var hint = hasWorking ? M.hintFor(last, 0, u, false) : null;
-    if (hint && hint.weight > 0) return sets + ' × ' + U.fmtNum(hint.weight) + ' ' + u;
+    if (hint && hint.seconds) return sets + ' × ' + hint.seconds + ' sec';
+    if (hint && hint.weight > 0) return sets + ' × ' + WEIGHT_SIGN[exKind(exerciseId)] + U.fmtNum(hint.weight) + ' ' + u;
     return sets + ' set' + (sets === 1 ? '' : 's');
   }
   /** "Last time 3 × 5 @ 195 lb" when every working set matched, otherwise the top set. */
-  function lastTimeText(last, u) {
+  function lastTimeText(last, u, kind) {
     if (!last) return '';
     var count = last.sets.filter(function (s) { return !s.warmup; }).length;
     if (!count) return '';
     var hints = [];
     for (var i = 0; i < count; i++) hints.push(M.hintFor(last, i, u, false));
     var first = hints[0];
-    var same = hints.every(function (h) { return h.weight === first.weight && h.reps === first.reps; });
-    if (same) return 'Last time ' + count + ' × ' + first.reps + (first.weight > 0 ? ' @ ' + U.fmtNum(first.weight) + ' ' + u : '');
+    var same = hints.every(function (h) { return h.weight === first.weight && h.reps === first.reps && h.seconds === first.seconds; });
+    var sign = WEIGHT_SIGN[kind] || '';
+    if (first.seconds && same) return 'Last time ' + count + ' × ' + first.seconds + ' sec';
+    if (same) return 'Last time ' + count + ' × ' + first.reps + (first.weight > 0 ? ' @ ' + sign + U.fmtNum(first.weight) + ' ' + u : '');
+    if (first.seconds) return 'Last time up to ' + Math.max.apply(null, hints.map(function (h) { return h.seconds || 0; })) + ' sec';
     var top = hints.reduce(function (a, h) { return h.weight > a.weight || (h.weight === a.weight && h.reps > a.reps) ? h : a; });
-    return 'Last time top set ' + (top.weight > 0 ? U.fmtNum(top.weight) + ' ' + u + ' × ' + top.reps : top.reps + ' reps');
+    return 'Last time top set ' + (top.weight > 0 ? sign + U.fmtNum(top.weight) + ' ' + u + ' × ' + top.reps : top.reps + ' reps');
   }
   function bestText(exerciseId, u, excludeWorkoutId) {
-    var e = 0, reps = 0;
+    var e = 0, reps = 0, seconds = 0, assist = null;
     M.sessionsFor(S.workouts, exerciseId, excludeWorkoutId).forEach(function (s) {
       e = Math.max(e, s.topE1rm);
       reps = Math.max(reps, s.maxBwReps);
+      seconds = Math.max(seconds, s.maxSeconds);
+      if (s.leastAssistLb !== null) assist = assist === null ? s.leastAssistLb : Math.min(assist, s.leastAssistLb);
     });
     if (e > 0) return 'Best ' + Math.round(U.fromLb(e, u));
+    if (seconds > 0) return 'Best ' + seconds + ' sec';
+    if (assist !== null) return 'Best −' + Math.round(U.fromLb(assist, u));
     return reps > 0 ? 'Best ' + reps + ' reps' : '';
+  }
+
+  // ---------- how an exercise is logged ----------
+  var WEIGHT_SIGN = { weight: '', bodyweight: '', weighted: '+', assisted: '−', timed: '' };
+  function trackingLabel(kind) {
+    for (var i = 0; i < EX.TRACKING.length; i++) if (EX.TRACKING[i].id === kind) return EX.TRACKING[i].label;
+    return EX.TRACKING[0].label;
+  }
+  /** The type chosen for this lift before, otherwise its default. */
+  function exKind(exerciseId) { return S.settings.exerciseTypes[exerciseId] || EX.defaultTracking(exById(exerciseId)); }
+  function entryKind(entry) { return entry.tracking || 'weight'; }
+  /** "195 × 5", "+25 × 8", "−40 × 8", "45 sec" or "8 reps". */
+  function setText(s) {
+    if (s.tracking === 'timed' || (Number(s.seconds) > 0 && !(Number(s.reps) > 0))) return U.fmtNum(s.seconds) + ' sec';
+    if (Number(s.weight) > 0) return (WEIGHT_SIGN[s.tracking] || '') + U.fmtNum(s.weight) + ' × ' + U.fmtNum(s.reps);
+    return U.fmtNum(s.reps) + ' reps';
+  }
+
+  // ---------- plate calculator ----------
+  function barFor(u) { return u === 'kg' ? S.settings.barKg : S.settings.barLb; }
+  function plateChips(list) {
+    var sizes = list.filter(function (p, i) { return list.indexOf(p) === i; });
+    return '<span class="plate-chips">' + list.map(function (p) {
+      return '<span class="plate-chip p' + Math.min(sizes.indexOf(p), 2) + '">' + U.fmtNum(p) + '</span>';
+    }).join('') + '</span>';
+  }
+  function platesInner(weight, u) {
+    var bar = barFor(u);
+    var plan = P.calculate(weight, bar, P.PLATES[u]);
+    if (!plan) return '';
+    if (plan.lessThanBar) return '<span>Less than the ' + U.fmtNum(bar) + ' ' + u + ' bar</span>';
+    if (plan.exact) {
+      return plan.perSide.length ? '<span>Each side of a ' + U.fmtNum(bar) + ' ' + u + ' bar</span>' + plateChips(plan.perSide)
+        : '<span>Just the ' + U.fmtNum(bar) + ' ' + u + ' bar</span>';
+    }
+    return '<span>Can’t load that exactly. Closest: ' + U.fmtNum(plan.below) + ' or ' + U.fmtNum(plan.above) + ' ' + u + '. For ' + U.fmtNum(plan.below) + ', each side:</span>' +
+      (plan.belowPlates.length ? plateChips(plan.belowPlates) : '<span>no plates</span>');
+  }
+
+  /** One set's row. opts: { scope: 'active'|'edit', u, hint, active, n, side, kind } */
+  function numInput(field, entry, s, opts, label, placeholder, value, mode) {
+    return '<span class="cell"><input class="num" data-scope="' + opts.scope + '" data-field="' + field + '" data-e="' + entry.id + '" data-s="' + s.id + '" inputmode="' + mode + '" autocomplete="off" aria-label="' + label + ', set ' + opts.n + '"' +
+      ' placeholder="' + placeholder + '" value="' + (value != null ? U.fmtNum(value) : '') + '">' +
+      (opts.isPr ? '<span class="pr-tag">PR</span>' : '') + '</span>';
+  }
+  function setRowHtml(entry, s, opts) {
+    var kind = opts.kind, hint = opts.hint, sideLow = opts.side ? ' ' + opts.side.toLowerCase() : '';
+    var inputs;
+    if (kind === 'timed') {
+      inputs = numInput('seconds', entry, s, opts, 'Seconds' + sideLow, hint && hint.seconds ? hint.seconds : '', s.seconds, 'numeric');
+    } else if (kind === 'bodyweight') {
+      inputs = numInput('reps', entry, s, opts, 'Reps' + sideLow, hint ? hint.reps || '' : '', s.reps, 'numeric');
+    } else {
+      var weightLabel = (kind === 'assisted' ? 'Assistance' : kind === 'weighted' ? 'Added weight' : 'Weight') + ' (' + opts.u + ')';
+      inputs = numInput('weight', entry, s, opts, weightLabel, hint && hint.weight > 0 ? U.fmtNum(hint.weight) : '', s.weight, 'decimal') +
+        '<span class="x" aria-hidden="true">×</span>' +
+        numInput('reps', entry, s, { scope: opts.scope, n: opts.n }, 'Reps' + sideLow, hint ? hint.reps || '' : '', s.reps, 'numeric');
+    }
+    var single = kind === 'timed' || kind === 'bodyweight';
+    var warmAct = opts.scope === 'edit' ? 'edit-set-warm' : 'set-warmup';
+    var endButton = opts.scope === 'edit'
+      ? '<button class="check" data-act="edit-set-remove" data-e="' + entry.id + '" data-s="' + s.id + '" aria-label="Delete set ' + opts.n + '">' + icon('close') + '</button>'
+      : '<button class="check' + (s.done ? ' on' : '') + '" data-act="set-toggle" data-e="' + entry.id + '" data-s="' + s.id + '" aria-label="' + (s.done ? 'Unconfirm set ' : 'Confirm set ') + opts.n + '" aria-pressed="' + (s.done ? 'true' : 'false') + '">' + icon('check') + '</button>';
+    return '<div class="set-row' + (single ? ' one' : '') + (s.done && opts.scope !== 'edit' ? ' done' : '') + (s.warmup ? ' warm' : '') + (opts.active ? ' active' : '') + '">' +
+      '<button class="set-n" data-act="' + warmAct + '" data-e="' + entry.id + '" data-s="' + s.id + '" aria-label="Set ' + opts.n + (s.warmup ? ', warm-up' : '') + '. Tap to toggle warm-up">' + (s.warmup ? 'W' : opts.workIdx) + '</button>' +
+      inputs + endButton + '</div>';
+  }
+  function setHeadHtml(kind, u, side) {
+    var sideTag = side ? ' <span class="head-side">' + side.toLowerCase() + '</span>' : '';
+    if (kind === 'timed') return '<div class="set-row head one"><span>Set</span><span>Seconds' + sideTag + '</span><span></span></div>';
+    if (kind === 'bodyweight') return '<div class="set-row head one"><span>Set</span><span>Reps' + sideTag + '</span><span></span></div>';
+    return '<div class="set-row head"><span>Set</span><span>' + WEIGHT_SIGN[kind] + u + '</span><span></span><span>Reps' + sideTag + '</span><span></span></div>';
   }
 
   // ---------- toasts & modals ----------
@@ -191,13 +275,18 @@
 
   // ---------- render ----------
   function viewKey() {
-    return V.screen ? V.screen + ':' + (V.historyId || '') : 'tab:' + V.tab;
+    if (needsSetup()) return 'setup';
+    return V.screen ? V.screen + ':' + (V.screen === 'lift' ? V.liftId : V.historyId || '') : 'tab:' + V.tab;
   }
+  function needsSetup() { return !S.settings.setupDone && !S.active; }
 
   function render() {
     var body;
-    if (V.screen === 'workout' && S.active) body = viewWorkout();
+    if (needsSetup()) body = viewSetup();
+    else if (V.screen === 'workout' && S.active) body = viewWorkout();
     else if (V.screen === 'template' && V.tplDraft) body = viewTemplateEditor();
+    else if (V.screen === 'editWorkout' && V.edit) body = viewEditWorkout();
+    else if (V.screen === 'lift' && V.liftId) body = viewLift();
     else if (V.screen === 'historyDetail' && findWorkout(V.historyId)) body = viewHistoryDetail();
     else {
       V.screen = null;
@@ -207,12 +296,12 @@
     var keepScroll = key === lastViewKey ? window.scrollY : 0;
     lastViewKey = key;
 
-    var showSummary = V.screen === 'historyDetail' && V.summary === V.historyId;
+    var noTabs = needsSetup() || V.screen === 'editWorkout' || (V.screen === 'historyDetail' && V.summary === V.historyId);
     app.innerHTML =
-      '<main class="screen' + (showSummary ? ' no-tabs' : '') + '">' + body + '</main>' +
-      (S.active && V.screen !== 'workout' ? activeBar() : '') +
+      '<main class="screen' + (noTabs ? ' no-tabs' : '') + '">' + body + '</main>' +
+      (S.active && V.screen !== 'workout' && V.screen !== 'editWorkout' ? activeBar() : '') +
       (V.screen === 'workout' ? restBar() : '') +
-      (showSummary ? '' : tabBar()) +
+      (noTabs ? '' : tabBar()) +
       (V.picker ? viewPicker() : '') +
       (V.prMoment ? viewPrMoment() : '');
     window.scrollTo(0, keepScroll);
@@ -374,32 +463,32 @@
       }
       var last = M.lastSessionFor(S.workouts, entry.exerciseId, a.id);
       var activeSet = entry.sets.filter(function (s) { return !s.done; })[0];
-      var lastText = lastTimeText(last, a.unit);
+      var kind = entryKind(entry);
+      var lastText = lastTimeText(last, a.unit, kind);
       var best = bestText(entry.exerciseId, a.unit, a.id);
+      var showPlates = kind === 'weight' && ex.equipment === 'Barbell' && !!activeSet;
       var rows = entry.sets.map(function (s, i) {
         var hint = M.hintFor(last, kindIndex(entry, s), a.unit, s.warmup);
-        var workIdx = kindIndex(entry, s) + 1;
-        var isPr = s.done && V.prShown[s.id] === prKey(s);
-        return '<div class="set-row' + (s.done ? ' done' : '') + (s.warmup ? ' warm' : '') + (s === activeSet ? ' active' : '') + '">' +
-          '<button class="set-n" data-act="set-warmup" data-e="' + entry.id + '" data-s="' + s.id + '" aria-label="Set ' + (i + 1) + (s.warmup ? ', warm-up' : '') + '. Tap to toggle warm-up">' + (s.warmup ? 'W' : workIdx) + '</button>' +
-          '<span class="cell"><input class="num" data-field="weight" data-e="' + entry.id + '" data-s="' + s.id + '" inputmode="decimal" autocomplete="off" aria-label="Weight, set ' + (i + 1) + ' (' + a.unit + ')"' +
-          ' placeholder="' + (hint && hint.weight > 0 ? U.fmtNum(hint.weight) : '') + '" value="' + (s.weight != null ? U.fmtNum(s.weight) : '') + '">' +
-          (isPr ? '<span class="pr-tag">PR</span>' : '') + '</span>' +
-          '<span class="x" aria-hidden="true">×</span>' +
-          '<span class="cell"><input class="num" data-field="reps" data-e="' + entry.id + '" data-s="' + s.id + '" inputmode="numeric" autocomplete="off" aria-label="Reps' + (side ? ' ' + side.toLowerCase() : '') + ', set ' + (i + 1) + '"' +
-          ' placeholder="' + (hint ? hint.reps : '') + '" value="' + (s.reps != null ? U.fmtNum(s.reps) : '') + '"></span>' +
-          '<button class="check' + (s.done ? ' on' : '') + '" data-act="set-toggle" data-e="' + entry.id + '" data-s="' + s.id + '" aria-label="' + (s.done ? 'Unconfirm set ' : 'Confirm set ') + (i + 1) + '" aria-pressed="' + (s.done ? 'true' : 'false') + '">' + icon('check') + '</button>' +
-          '</div>';
+        var html = setRowHtml(entry, s, {
+          scope: 'active', u: a.unit, hint: hint, kind: kind, side: side, n: i + 1, workIdx: kindIndex(entry, s) + 1,
+          active: s === activeSet, isPr: s.done && V.prShown[s.id] === prKey(s)
+        });
+        if (s === activeSet && showPlates) {
+          var plannedWeight = s.weight != null ? s.weight : hint ? hint.weight : null;
+          html += '<div class="plates" data-plates aria-live="polite">' + platesInner(plannedWeight, a.unit) + '</div>';
+        }
+        return html;
       }).join('');
       return '<section class="card ex-card" aria-label="' + esc(ex.name) + '"><div class="ex-head"><div class="ex-head-text"><h2>' + esc(ex.name) + '</h2>' +
         '<p class="ex-meta">' + esc(ex.equipment) + (side ? ' · ' + side : '') + (lastText ? ' · ' + lastText : '') + '</p></div>' +
-        '<div class="ex-tools">' + (best ? '<span class="ex-best" title="Best estimated 1-rep max">' + best + '</span>' : '') +
+        '<div class="ex-tools">' + (best ? '<span class="ex-best" title="Your best so far">' + best + '</span>' : '') +
         '<button class="icon-btn" data-act="ex-remove" data-e="' + entry.id + '" aria-label="Remove exercise">' + icon('close', 'sm') + '</button></div></div>' +
-        '<div class="set-row head"><span>Set</span><span>' + a.unit + '</span><span></span><span>Reps' + (side ? ' <span class="head-side">' + side.toLowerCase() + '</span>' : '') + '</span><span></span></div>' +
+        setHeadHtml(kind, a.unit, side) +
         rows +
         '<div class="ex-actions"><button class="btn ghost sm" data-act="set-add" data-e="' + entry.id + '">' + icon('plus', 'sm') + 'Add set</button>' +
         (entry.sets.length > 1 ? '<button class="btn ghost sm" data-act="set-remove" data-e="' + entry.id + '">Remove last set</button>' : '') +
         '<button class="btn ghost sm" data-act="ex-swap" data-e="' + entry.id + '">Swap</button>' +
+        '<button class="btn ghost sm" data-act="ex-type" data-e="' + entry.id + '" aria-label="Logging type: ' + trackingLabel(kind) + '. Tap to change">' + trackingLabel(kind) + '</button>' +
         '<button class="icon-btn boxed" data-act="ex-move" data-e="' + entry.id + '" data-d="-1" aria-label="Move ' + esc(ex.name) + ' up"' + (a.exercises[0] === entry ? ' disabled' : '') + '>' + icon('up', 'sm') + '</button>' +
         '<button class="icon-btn boxed" data-act="ex-move" data-e="' + entry.id + '" data-d="1" aria-label="Move ' + esc(ex.name) + ' down"' + (a.exercises[a.exercises.length - 1] === entry ? ' disabled' : '') + '>' + icon('down', 'sm') + '</button>' +
         '</div></section>';
@@ -420,7 +509,7 @@
   }
 
   // ----- PR moment -----
-  function prKey(set) { return set.weight + 'x' + set.reps; }
+  function prKey(set) { return set.weight + 'x' + set.reps + 'x' + set.seconds; }
 
   /** Everything the PR panel shows, worked out when the set is confirmed. */
   function buildPrMoment(entry, set, pr) {
@@ -430,9 +519,12 @@
     var hist = M.sessionsFor(S.workouts, id, S.active.id);
     var m = { name: ex.name, side: sideLabel(ex), unit: u, type: pr.type, weight: set.weight, reps: set.reps, note: '' };
     if (pr.type !== 'e1rm') {
-      hist = hist.filter(function (s) { return s.maxBwReps > 0; }).slice(-7);
+      var pick = function (s) { return pr.type === 'seconds' ? s.maxSeconds : s.maxBwReps; };
+      hist = hist.filter(function (s) { return pick(s) > 0; }).slice(-7);
       m.previous = pr.previous;
-      m.values = hist.map(function (s) { return s.maxBwReps; }).concat(pr.reps);
+      m.count = pr.type === 'seconds' ? pr.seconds : pr.reps;
+      m.countUnit = pr.type === 'seconds' ? 'sec' : 'reps';
+      m.values = hist.map(pick).concat(m.count);
       m.from = hist.length ? hist[0].date : null;
       return m;
     }
@@ -461,12 +553,12 @@
   function viewPrMoment() {
     var m = V.prMoment;
     var isE = m.type === 'e1rm';
-    var main = isE ? U.fmtNum(m.weight) : String(m.reps);
-    var sub = isE ? '<span>' + m.unit + '</span><span>× ' + m.reps + '</span>' : '<span>reps</span>';
+    var main = isE ? U.fmtNum(m.weight) : String(m.count);
+    var sub = isE ? '<span>' + m.unit + '</span><span>× ' + m.reps + '</span>' : '<span>' + m.countUnit + '</span>';
     var grid = isE
       ? '<div class="pr-grid"><div><strong>' + U.fmtWeightLb(m.e1rmLb, m.unit) + '</strong><span>Estimated 1-rep max</span></div>' +
         '<div><strong>+' + U.fmtWeightLb(m.e1rmLb - m.previousLb, m.unit) + '</strong><span>Over your best of ' + U.fmtNum(U.fromLb(m.previousLb, m.unit)) + '</span></div></div>'
-      : '<div class="pr-grid one"><div><strong>+' + (m.reps - m.previous) + ' reps</strong><span>Over your best of ' + m.previous + '</span></div></div>';
+      : '<div class="pr-grid one"><div><strong>+' + (m.count - m.previous) + ' ' + m.countUnit + '</strong><span>Over your best of ' + m.previous + '</span></div></div>';
     var display = m.values.map(function (v) { return isE ? U.fmtNum(U.fromLb(v, m.unit)) : String(v); });
     return '<div class="pr-moment" role="dialog" aria-modal="true" aria-label="New personal record">' +
       '<section class="pr-panel"><div class="pr-panel-top"><span class="pr-kicker">' + icon('trophy') + 'New personal record</span>' +
@@ -474,7 +566,7 @@
       '<h1 class="pr-name">' + esc(m.name) + '</h1>' + (m.side ? '<span class="pr-side">' + m.side + '</span>' : '') +
       '<p class="pr-num' + (main.length > 4 ? ' long' : '') + '"><span class="pr-num-main">' + main + '</span><span class="pr-num-sub">' + sub + '</span></p>' +
       grid + '</section>' +
-      '<section class="pr-chart" aria-label="Recent sessions"><div class="pr-chart-head"><h2 class="card-title">Best set each session</h2><span>' + (isE ? 'est. 1RM, ' + m.unit : 'reps') + '</span></div>' +
+      '<section class="pr-chart" aria-label="Recent sessions"><div class="pr-chart-head"><h2 class="card-title">Best set each session</h2><span>' + (isE ? 'est. 1RM, ' + m.unit : m.countUnit) + '</span></div>' +
       bars(m.values, 'last-accent', 'Last ' + m.values.length + ' sessions: ' + display.join(', ') + ', the last one today', true) +
       '<div class="pr-chart-foot"><span>' + (m.from ? new Date(m.from).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '') + '</span><strong>Today</strong></div>' +
       (m.note ? '<p class="pr-note">' + m.note + '</p>' : '') + '</section>' +
@@ -484,33 +576,42 @@
   // ----- Progress -----
   function viewProgress() {
     var trends = M.liftTrends(S.workouts, new Date());
-    var STATUS = { progressing: 'Progressing', holding: 'Holding', stalled: 'Stalled', building: 'Building data' };
-    var LAST_BAR = { progressing: 'last-accent', holding: 'last-soft', stalled: 'last-warn', building: 'last-soft' };
-    var trendHtml = trends.length ? trends.map(function (t) {
+    var trendCard = function (t) {
       var ex = exById(t.exerciseId);
-      var values = t.spark.map(function (v) { return U.fmtNum(U.fromLb(v, unit())); }).join(', ');
-      return '<article class="card trend"><div class="trend-main"><div class="trend-name"><h2 class="h-lift">' + esc(ex.name) + '</h2>' +
-        '<span class="pill ' + t.status + '">' + STATUS[t.status] + '</span></div>' +
-        '<span class="trend-num">' + U.fmtNum(U.fromLb(t.bestE1rmLb, unit())) + '<small> ' + unit() + ' est. 1RM</small></span>' +
-        '<span class="muted small">' + (sideLabel(ex) ? sideLabel(ex) + ' · ' : '') + t.text + '</span></div>' +
-        bars(t.spark, LAST_BAR[t.status], ex.name + ', estimated 1-rep max by session: ' + values) +
-        (t.status === 'stalled' ? '<p class="idea">Try: drop about 10% and build back up, switch rep range (e.g. 5s → 8s), or add one set.</p>' : '') +
-        '</article>';
-    }).join('') : '<section class="card empty"><p class="muted small">Finish a few workouts with weighted sets and each lift’s trend shows up here.</p></section>';
+      var values = t.spark.map(function (v) { return metricValue(t.metric, v); }).join(', ');
+      return '<button class="card trend" data-act="lift-open" data-id="' + esc(t.exerciseId) + '"><span class="trend-main"><span class="trend-name"><span class="trend-lift">' + esc(ex.name) + '</span>' +
+        '<span class="pill ' + t.status + '">' + STATUS_LABEL[t.status] + '</span></span>' +
+        '<span class="trend-num">' + metricValue(t.metric, t.best) + '<small> ' + metricUnit(t.metric) + '</small></span>' +
+        '<span class="muted small">' + (sideLabel(ex) ? sideLabel(ex) + ' · ' : '') + t.text + '</span></span>' +
+        bars(t.spark, LAST_BAR[t.status], ex.name + ', ' + metricUnit(t.metric) + ' by session: ' + values) +
+        (t.status === 'stalled' ? '<span class="idea">Try: ' + STALL_IDEAS[t.metric][0].toLowerCase() + ' Tap for more ideas.</span>' : '') +
+        '</button>';
+    };
+    var group = function (title, statuses) {
+      var items = trends.filter(function (t) { return statuses.indexOf(t.status) !== -1; });
+      return items.length ? '<h2 class="month">' + title + '</h2>' + items.map(trendCard).join('') : '';
+    };
+    var trendHtml = trends.length
+      ? group('Needs attention', ['stalled', 'down']) + group('Moving', ['progressing', 'holding']) + group('Building or paused', ['building', 'paused'])
+      : '<section class="card empty"><p class="muted small">Finish a few workouts and each lift’s trend shows up here.</p></section>';
 
-    var counts = { progressing: 0, holding: 0, stalled: 0, building: 0 };
+    var counts = { progressing: 0, holding: 0, stalled: 0, building: 0, down: 0, paused: 0 };
     trends.forEach(function (t) { counts[t.status]++; });
     var lede = [];
     if (counts.progressing) lede.push('<strong class="win">' + counts.progressing + ' progressing</strong>');
     if (counts.holding) lede.push(counts.holding + ' holding');
     if (counts.stalled) lede.push('<strong class="warn">' + counts.stalled + ' stalled</strong>');
+    if (counts.down) lede.push('<strong class="warn">' + counts.down + ' down</strong>');
     if (counts.building) lede.push(counts.building + ' building data');
+    if (counts.paused) lede.push(counts.paused + ' paused');
     var ledeHtml = trends.length ? '<p class="lede">' + trends.length + ' lift' + (trends.length === 1 ? '' : 's') + ' in the last 8 weeks: ' + lede.join(', ') + '.</p>' : '';
 
     var prs = M.personalRecords(S.workouts);
     var prHtml = prs.length ? prs.map(function (r) {
       var ex = exById(r.exerciseId);
       var main = r.bestE1rm ? 'Est. 1RM ' + w(r.bestE1rm.e1rmLb) + ' <span class="muted">(' + w(r.bestE1rm.weightLb) + ' × ' + r.bestE1rm.reps + ')</span>'
+        : r.maxSeconds ? r.maxSeconds.seconds + ' sec'
+        : r.leastAssist ? 'Least help ' + w(r.leastAssist.weightLb) + ' <span class="muted">× ' + r.leastAssist.reps + '</span>'
         : r.maxBwReps ? r.maxBwReps.reps + ' reps' : '—';
       var heavy = r.heaviest ? 'Heaviest ' + w(r.heaviest.weightLb) + ' × ' + r.heaviest.reps + ' · ' : '';
       return '<li class="pr"><strong>' + esc(ex.name) + (sideLabel(ex) ? ' <span class="plan-side">' + sideLabel(ex).toLowerCase() + '</span>' : '') + '</strong><span class="pr-main">' + main + '</span>' +
@@ -523,20 +624,197 @@
     }).join('');
 
     return '<header class="top"><h1>Progress</h1></header>' +
-      ledeHtml + trendHtml +
-      '<details class="how"><summary>How trends are worked out</summary><p class="muted small">Each session’s best set is turned into an estimated one-rep max: weight × (1 + reps ÷ 30). ' +
+      ledeHtml + weeklyChart() + trendHtml +
+      '<details class="how"><summary>How trends are worked out</summary><p class="muted small">Each session’s best set is turned into an estimated one-rep max: weight × (1 + reps ÷ 30). Lifts without weight use your most reps or longest hold instead. ' +
       '<b>Progressing</b> = a new best within your last 3 sessions of that lift. <b>Holding</b> = 3–4 sessions since the best. <b>Stalled</b> = 5 or more. ' +
-      'Warm-ups don’t count. Only lifts trained in the last 8 weeks are shown.</p></details>' +
+      '<b>Down</b> = your last 2 sessions were over 5% under your best of the 6 weeks before them. <b>Paused</b> = no session in 14 days or more. ' +
+      'Warm-ups don’t count, and assisted lifts have no trend. Only lifts trained in the last 8 weeks are shown.</p></details>' +
       '<section class="card"><h2 class="card-title">Personal records</h2><ul class="prs">' + prHtml + '</ul></section>' +
       '<section class="card"><h2 class="card-title">Settings &amp; data</h2>' +
       '<div class="setting"><span>Units</span><div class="seg"><button class="' + (unit() === 'lb' ? 'on' : '') + '" data-act="set-unit" data-v="lb">lb</button>' +
       '<button class="' + (unit() === 'kg' ? 'on' : '') + '" data-act="set-unit" data-v="kg">kg</button></div></div>' +
       '<div class="setting col"><span>Rest timer after each set</span><div class="chips">' + restChips + '</div></div>' +
+      '<label class="setting"><span>Bar weight (' + unit() + ')</span><input class="bar-input" data-field="bar" inputmode="decimal" autocomplete="off" value="' + U.fmtNum(barFor(unit())) + '"></label>' +
+      '<div class="setting col"><span>Import from Fitbod</span><p class="muted small">Export your workouts from Fitbod’s settings as a CSV file, then choose it here. Imported workouts never count as PRs, but later sessions have to beat them.</p>' +
+      '<button class="btn ghost block" data-act="fitbod-pick">Choose Fitbod file</button>' + importsHtml() + '</div>' +
       '<div class="setting col"><span>Backup</span><p class="muted small">Your workouts are saved only in this browser on this device. Export a backup now and then, and before switching phones.</p>' +
       '<div class="row-2"><button class="btn ghost" data-act="export">Export backup</button><button class="btn ghost" data-act="import">Restore backup</button></div></div>' +
       '<button class="btn danger-ghost block" data-act="erase-all">Erase all data on this device</button>' +
       '<p class="muted small center">PR Forge web ' + VERSION + ' · ' + S.workouts.length + ' workouts saved</p></section>' +
-      '<input type="file" id="import-file" accept=".json,application/json" hidden>';
+      fileInputs();
+  }
+  function fileInputs() {
+    return '<input type="file" id="import-file" accept=".json,application/json" hidden>' +
+      '<input type="file" id="fitbod-file" accept=".csv,text/csv,text/comma-separated-values" hidden>';
+  }
+  function importsHtml() {
+    return S.imports.map(function (b) {
+      var when = b.at ? new Date(b.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+      return '<div class="import-row"><span class="small">' + esc(b.source) + ' · ' + b.workouts + ' workout' + (b.workouts === 1 ? '' : 's') + (when ? ' · ' + when : '') + '</span>' +
+        '<button class="btn ghost sm" data-act="import-undo" data-id="' + esc(b.id) + '">Undo</button></div>';
+    }).join('');
+  }
+
+  // ----- Progress charts and lift detail -----
+  var STATUS_LABEL = { progressing: 'Progressing', holding: 'Holding', stalled: 'Stalled', building: 'Building data', down: 'Down', paused: 'Paused' };
+  var LAST_BAR = { progressing: 'last-accent', holding: 'last-soft', stalled: 'last-warn', building: 'last-soft', down: 'last-warn', paused: 'last-soft' };
+  var STALL_IDEAS = {
+    e1rm: ['Keep the weight and add one rep per set before adding load.', 'Take a lighter week (about 10% less weight), then build back.', 'Switch rep ranges for 3–4 weeks, e.g. sets of 5 to sets of 8.'],
+    reps: ['Add one set at the end of the session.', 'Spread the same total reps over more, shorter sets.', 'Try a harder variation for a few weeks.'],
+    seconds: ['Add 5 seconds to one hold each session.', 'Do one more hold per session.', 'Try a harder variation for a few weeks.']
+  };
+  function metricValue(metric, v) { return metric === 'e1rm' ? U.fmtNum(U.fromLb(v, unit())) : String(v); }
+  function metricUnit(metric) { return metric === 'e1rm' ? unit() + ' est. 1RM' : metric === 'seconds' ? 'sec' : 'reps'; }
+  function shortDate(iso) { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
+
+  function weekReadout(o) {
+    return 'Week of ' + shortDate(o.weekStart) + ': ' + vol(o.volumeLb) + ' · ' + o.count + ' workout' + (o.count === 1 ? '' : 's');
+  }
+  /** Volume per week. Bars start at zero, so their heights can be compared. Tap a bar for its numbers. */
+  function weeklyChart() {
+    var series = M.weeklySeries(S.workouts, new Date(), 8);
+    if (!series.some(function (o) { return o.count > 0; })) return '';
+    var max = Math.max.apply(null, series.map(function (o) { return o.volumeLb; })) || 1;
+    var f = M.workoutFrequency(S.workouts, new Date());
+    var columns = series.map(function (o, i) {
+      var h = o.volumeLb > 0 ? Math.max(3, (100 * o.volumeLb) / max) : 0;
+      return '<button class="vol-col' + (i === series.length - 1 ? ' now' : '') + '" data-act="vol-tap" data-i="' + i + '" data-read="' + esc(weekReadout(o)) + '" aria-label="' + esc(weekReadout(o)) + '">' +
+        '<span class="vol-bar" style="height:' + h.toFixed(1) + '%"></span></button>';
+    }).join('');
+    return '<section class="card" aria-label="Weekly volume"><div class="pr-chart-head"><h2 class="card-title">Weekly volume</h2><span class="muted small">last 8 weeks</span></div>' +
+      '<div class="vol-chart">' + columns + '</div>' +
+      '<div class="pr-chart-foot"><span>' + shortDate(series[0].weekStart) + '</span><strong>This week</strong></div>' +
+      '<p class="muted small" data-vol-read>' + esc(weekReadout(series[series.length - 1])) + '</p>' +
+      '<p class="muted small">' + f.thisWeek + ' workout' + (f.thisWeek === 1 ? '' : 's') + ' this week · ' + U.fmtNum(f.priorAverage) + ' per week over the previous 4.</p></section>';
+  }
+
+  /** One lift over time. Tap-free on purpose: the session list below it holds the same numbers. */
+  function liftChart(points, metric, status) {
+    if (points.length < 2) return '<p class="muted small">Log another session to see a chart.</p>';
+    var W = 320, H = 150, L = 8, R = 8, T = 22, B = 10;
+    var vals = points.map(function (p) { return p.value; });
+    var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+    var span = max - min || 1;
+    var xy = points.map(function (p, i) {
+      return [L + (i * (W - L - R)) / (points.length - 1), T + (H - T - B) * (max === min ? 0.5 : 1 - (p.value - min) / span)];
+    });
+    var last = xy[xy.length - 1];
+    var dots = xy.map(function (c, i) {
+      return '<circle cx="' + c[0].toFixed(1) + '" cy="' + c[1].toFixed(1) + '" r="4"' + (i === xy.length - 1 ? ' class="dot-' + status + '"' : '') + '><title>' +
+        shortDate(points[i].date) + ': ' + metricValue(metric, points[i].value) + ' ' + metricUnit(metric) + '</title></circle>';
+    }).join('');
+    var label = points.map(function (p) { return shortDate(p.date) + ' ' + metricValue(metric, p.value); }).join(', ');
+    return '<svg class="lift-chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(metricUnit(metric) + ' by session: ' + label) + '">' +
+      '<line class="axis" x1="' + L + '" x2="' + (W - R) + '" y1="' + (H - 1) + '" y2="' + (H - 1) + '"/>' +
+      '<polyline points="' + xy.map(function (c) { return c[0].toFixed(1) + ',' + c[1].toFixed(1); }).join(' ') + '"/>' + dots +
+      '<text x="' + Math.min(last[0], W - R) + '" y="' + Math.max(12, last[1] - 10).toFixed(1) + '" text-anchor="end">' + metricValue(metric, points[points.length - 1].value) + '</text></svg>';
+  }
+
+  function viewLift() {
+    var trend = M.liftTrends(S.workouts, new Date(), 36500).filter(function (t) { return t.exerciseId === V.liftId; })[0];
+    var back = '<header class="top row"><button class="btn ghost sm" data-act="lift-back">' + icon('back', 'sm') + 'Progress</button><span></span></header>';
+    if (!trend) return back + '<section class="card empty"><p class="muted small">No sessions for this lift yet.</p></section>';
+    var ex = exById(V.liftId);
+    var cutoff = Date.now() - 42 * 86400000;
+    var shown = V.liftRange === 'all' ? trend.points : trend.points.filter(function (p) { return new Date(p.date).getTime() >= cutoff; });
+    var rangeBtn = function (id, text) {
+      return '<button class="' + (V.liftRange === id ? 'on' : '') + '" data-act="lift-range" data-v="' + id + '" aria-pressed="' + (V.liftRange === id) + '">' + text + '</button>';
+    };
+    var sessions = trend.points.slice().reverse().map(function (p) {
+      var bestSet = p.set ? U.fmtNum(U.fromLb(p.set.weightLb, unit())) + ' ' + unit() + ' × ' + p.set.reps + ' · ' : '';
+      return '<li><button class="session-row" data-act="history-open" data-id="' + esc(p.workoutId) + '"><span>' + shortDate(p.date) + ' ' + new Date(p.date).getFullYear() + '</span>' +
+        '<span class="session-val">' + bestSet + metricValue(trend.metric, p.value) + ' ' + metricUnit(trend.metric).replace(unit() + ' ', '') + '</span></button></li>';
+    }).join('');
+    var ideas = trend.status === 'stalled' || trend.status === 'down'
+      ? '<section class="card"><h2 class="card-title">Ideas to try</h2><ul class="ideas">' + STALL_IDEAS[trend.metric].map(function (t) { return '<li>' + t + '</li>'; }).join('') + '</ul></section>'
+      : '';
+    return back +
+      '<header class="top"><h1>' + esc(ex.name) + '</h1>' + (sideLabel(ex) ? '<span class="muted">' + sideLabel(ex) + '</span>' : '') + '</header>' +
+      '<div class="lift-head"><span class="trend-num">' + metricValue(trend.metric, trend.best) + '<small> ' + metricUnit(trend.metric) + ' best</small></span>' +
+      '<span class="pill ' + trend.status + '">' + STATUS_LABEL[trend.status] + '</span></div>' +
+      '<p class="lede">' + trend.text + '. ' + trend.sessions + ' session' + (trend.sessions === 1 ? '' : 's') + ' logged.</p>' +
+      '<section class="card"><div class="pr-chart-head"><h2 class="card-title">Each session’s best</h2><div class="seg">' + rangeBtn('recent', '6 wk') + rangeBtn('all', 'All') + '</div></div>' +
+      (shown.length ? liftChart(shown, trend.metric, trend.status) : '<p class="muted small">No sessions in the last 6 weeks.</p>') + '</section>' +
+      ideas +
+      '<section class="card"><h2 class="card-title">Sessions</h2><ul class="session-list">' + sessions + '</ul></section>' +
+      '<p class="muted small tip">Trends are an early signal, not a diagnosis. Fatigue, technique and rep range all affect them.</p>';
+  }
+
+  // ----- First open -----
+  function viewSetup() {
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+    var rest = S.settings.restSeconds;
+    var restChips = [[0, 'Off'], [60, '1:00'], [90, '1:30'], [120, '2:00'], [180, '3:00']].map(function (r) {
+      return '<button class="chip' + (rest === r[0] ? ' on' : '') + '" data-act="set-rest" data-v="' + r[0] + '" aria-pressed="' + (rest === r[0]) + '">' + r[1] + '</button>';
+    }).join('');
+    return '<header class="setup-head"><img class="setup-logo" src="icons/logo.png" alt="PR Forge logo" onerror="this.remove()"><h1>Welcome</h1>' +
+      '<p class="lede">A simple lifting log. Faded numbers show last session, and one tap confirms a set.</p></header>' +
+      '<section class="card"><h2 class="card-title">Good to know</h2><ul class="ideas">' +
+      '<li><strong>No account.</strong> Your workouts are saved on this phone and nowhere else.</li>' +
+      '<li><strong>Export a backup now and then</strong> from Progress. It’s the only way to keep a copy or move to a new phone.</li>' +
+      '<li><strong>Works without signal</strong> once it has loaded.</li></ul></section>' +
+      (standalone ? '' : '<section class="card"><h2 class="card-title">Put it on your home screen</h2>' +
+        '<p class="small">On iPhone, open this page in Safari, tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>. Always open it from that icon: its workouts are kept separately from the Safari tab, and are less likely to be cleared.</p></section>') +
+      '<section class="card"><h2 class="card-title">Your setup</h2>' +
+      '<div class="setting"><span>Units</span><div class="seg"><button class="' + (unit() === 'lb' ? 'on' : '') + '" data-act="set-unit" data-v="lb" aria-pressed="' + (unit() === 'lb') + '">lb</button>' +
+      '<button class="' + (unit() === 'kg' ? 'on' : '') + '" data-act="set-unit" data-v="kg" aria-pressed="' + (unit() === 'kg') + '">kg</button></div></div>' +
+      '<div class="setting col"><span>Rest timer after each set</span><div class="chips">' + restChips + '</div></div></section>' +
+      '<div class="foot-actions"><button class="btn primary block" data-act="setup-done">Get started</button>' +
+      '<div class="row-2"><button class="btn ghost" data-act="fitbod-pick">Import Fitbod</button><button class="btn ghost" data-act="import">Restore backup</button></div></div>' +
+      fileInputs();
+  }
+
+  // ----- Editing a past workout -----
+  function localDate(iso) {
+    var d = new Date(iso);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function viewEditWorkout() {
+    var d = V.edit.draft;
+    var cards = d.exercises.map(function (entry) {
+      var ex = exById(entry.exerciseId), side = sideLabel(ex), kind = entryKind(entry);
+      var rows = entry.sets.map(function (s, i) {
+        return setRowHtml(entry, s, { scope: 'edit', u: d.unit, hint: null, kind: kind, side: side, n: i + 1, workIdx: kindIndex(entry, s) + 1, active: false });
+      }).join('');
+      return '<section class="card ex-card" aria-label="' + esc(ex.name) + '"><div class="ex-head"><div class="ex-head-text"><h2>' + esc(ex.name) + '</h2>' +
+        '<p class="ex-meta">' + esc(ex.equipment) + (side ? ' · ' + side : '') + ' · ' + trackingLabel(kind) + '</p></div>' +
+        '<div class="ex-tools"><button class="icon-btn" data-act="edit-ex-remove" data-e="' + entry.id + '" aria-label="Remove ' + esc(ex.name) + '">' + icon('close', 'sm') + '</button></div></div>' +
+        setHeadHtml(kind, d.unit, side) + rows +
+        '<div class="ex-actions"><button class="btn ghost sm" data-act="edit-set-add" data-e="' + entry.id + '">' + icon('plus', 'sm') + 'Add set</button></div></section>';
+    }).join('');
+    return '<header class="top row"><button class="btn ghost sm" data-act="edit-cancel">' + icon('back', 'sm') + 'Cancel</button><h1 class="h-sm">Edit workout</h1><span></span></header>' +
+      '<section class="card"><label class="field"><span>Name</span><input data-field="edit-name" maxlength="60" value="' + esc(d.name) + '"></label>' +
+      '<label class="field"><span>Date</span><input type="date" data-field="edit-date" value="' + localDate(d.startedAt) + '" max="' + localDate(new Date().toISOString()) + '"></label></section>' +
+      cards +
+      '<button class="btn ghost block" data-act="edit-ex-add">' + icon('plus', 'sm') + 'Add exercise</button>' +
+      '<p class="muted small tip">Saving changes means this workout no longer counts as a PR. Later sessions still have to beat its numbers. Sets with nothing entered are dropped.</p>' +
+      '<button class="btn primary block" data-act="edit-save">Save changes</button>';
+  }
+  function editEntry(eid) {
+    if (!V.edit) return null;
+    return V.edit.draft.exercises.filter(function (e) { return e.id === eid; })[0] || null;
+  }
+  function saveEdit() {
+    var d = V.edit.draft;
+    var changed = JSON.stringify(d) !== V.edit.original; // saving with no changes keeps any PR badge
+    d.exercises = d.exercises.map(function (e) {
+      var sets = e.sets.filter(function (s) {
+        return entryKind(e) === 'timed' ? Number(s.seconds) > 0 : Number(s.reps) > 0;
+      }).map(function (s) {
+        s.done = true;
+        if (s.weight == null) s.weight = 0;
+        return s;
+      });
+      return { id: e.id, exerciseId: e.exerciseId, tracking: e.tracking, sets: sets };
+    }).filter(function (e) { return e.sets.length > 0; });
+    if (!d.exercises.length) { toast('Keep at least one set, or delete this workout from History', 'warn', 3500); return; }
+    d.name = (d.name || '').trim() || 'Workout';
+    if (changed) d.edited = true;
+    S.workouts = S.workouts.map(function (x) { return x.id === d.id ? d : x; });
+    V.edit = null;
+    V.screen = 'historyDetail';
+    commit();
+    toast('Saved');
   }
 
   // ----- History -----
@@ -581,12 +859,12 @@
         volLb += M.setVolumeLb(s, wk.unit);
         if (!s.warmup) working++;
         var isPr = false;
-        if (evt && !marked && !s.warmup && Number(s.reps) === evt.reps) {
-          isPr = evt.type === 'e1rm' ? Math.abs(U.toLb(s.weight, wk.unit) - evt.weightLb) < 0.01 : !(Number(s.weight) > 0);
+        if (evt && !marked && !s.warmup) {
+          isPr = evt.type === 'seconds' ? Number(s.seconds) === evt.seconds
+            : Number(s.reps) === evt.reps && (evt.type === 'e1rm' ? Math.abs(U.toLb(s.weight, wk.unit) - evt.weightLb) < 0.01 : !(Number(s.weight) > 0));
           marked = isPr;
         }
-        var text = Number(s.weight) > 0 ? U.fmtNum(s.weight) + ' × ' + U.fmtNum(s.reps) : U.fmtNum(s.reps) + ' reps';
-        return '<span class="set-chip' + (s.warmup ? ' warm' : '') + (isPr ? ' is-pr' : '') + '">' + (s.warmup ? 'W ' : '') + text + '</span>';
+        return '<span class="set-chip' + (s.warmup ? ' warm' : '') + (isPr ? ' is-pr' : '') + '">' + (s.warmup ? 'W ' : '') + setText(s) + '</span>';
       }).join('');
       var side = sideLabel(e) ? sideLabel(e).toLowerCase() : '';
       var meta = (volLb > 0 ? U.fmtVolumeLb(volLb, wk.unit) : working + ' set' + (working === 1 ? '' : 's')) + (side ? ' · ' + side : '');
@@ -603,16 +881,18 @@
         '<span class="muted">' + d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) + '</span></header>' +
         stats + wins + log +
         '<div class="foot-actions"><button class="btn primary block" data-act="summary-done">Done</button>' +
-        '<button class="btn ghost block" data-act="history-to-template">Save as a workout</button></div>';
+        '<div class="row-2"><button class="btn ghost" data-act="history-edit">Edit this workout</button><button class="btn ghost" data-act="history-to-template">Save as a workout</button></div></div>';
     }
+    var flag = wk.imported ? 'Imported' : wk.edited ? 'Edited' : '';
     return '<header class="top row"><button class="btn ghost sm" data-act="history-back">' + icon('back', 'sm') + 'History</button><span></span></header>' +
-      '<header class="top"><p class="eyebrow">' + d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) + '</p><h1>' + esc(wk.name) + '</h1></header>' +
+      '<header class="top"><p class="eyebrow">' + d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) + (flag ? ' · ' + flag : '') + '</p><h1>' + esc(wk.name) + '</h1></header>' +
       stats + wins + log +
-      '<div class="foot-actions"><button class="btn ghost block" data-act="history-to-template">Save as a workout</button>' +
+      '<div class="foot-actions"><button class="btn ghost block" data-act="history-edit">Edit this workout</button>' +
+      '<button class="btn ghost block" data-act="history-to-template">Save as a workout</button>' +
       '<button class="btn danger-ghost block" data-act="history-delete">Delete this workout</button></div>';
   }
   function prWin(wk, evt) {
-    var detail = evt.reps + ' reps';
+    var detail = evt.type === 'seconds' ? evt.seconds + ' sec' : evt.reps + ' reps';
     if (evt.type === 'e1rm') {
       var prior = 0;
       M.sessionsFor(S.workouts, evt.exerciseId).forEach(function (s) {
@@ -691,6 +971,7 @@
       '<label class="field"><span>Main muscle</span><select id="cx-muscle">' + opts(EX.MUSCLES.concat(['Other'])) + '</select></label>' +
       '<label class="field"><span>Equipment</span><select id="cx-equip">' + opts(EX.EQUIPMENT) + '</select></label>' +
       '<label class="field"><span>One side at a time?</span><select id="cx-side"><option value="">No — both sides together</option><option value="arm">Yes — per arm</option><option value="leg">Yes — per leg</option></select></label>' +
+      '<label class="field"><span>How do you log it?</span><select id="cx-type">' + EX.TRACKING.map(function (t) { return '<option value="' + t.id + '">' + t.label + '</option>'; }).join('') + '</select></label>' +
       '<div class="modal-actions"><button class="btn ghost" data-act="modal-cancel">Cancel</button><button class="btn primary" data-act="custom-save">Save</button></div>');
   }
 
@@ -710,7 +991,28 @@
     for (var i = 0; i < entry.sets.length && entry.sets[i] !== set; i++) if (!!entry.sets[i].warmup === !!set.warmup) n++;
     return n;
   }
-  function newSet() { return { id: uid(), weight: null, reps: null, done: false, warmup: false }; }
+  function newSet(kind) { return { id: uid(), weight: null, reps: null, seconds: null, done: false, warmup: false, tracking: kind || 'weight' }; }
+  function newEntry(exerciseId, count) {
+    var kind = exKind(exerciseId);
+    var sets = [];
+    for (var i = 0; i < count; i++) sets.push(newSet(kind));
+    return { id: uid(), exerciseId: exerciseId, tracking: kind, sets: sets };
+  }
+  function setEntryType(entry, kind) {
+    entry.tracking = kind;
+    entry.sets = entry.sets.map(function () { return newSet(kind); });
+    S.settings.exerciseTypes[entry.exerciseId] = kind;
+    V.focusEntry = entry.id;
+    commit();
+  }
+  function chooseType(entry) {
+    V.typeEntry = entry.id;
+    V.modal = { resolve: null };
+    var current = entryKind(entry);
+    openModal('<h2>How do you log it?</h2><div class="type-list">' + EX.TRACKING.map(function (t) {
+      return '<button class="type-opt' + (t.id === current ? ' on' : '') + '" data-act="ex-type-set" data-v="' + t.id + '" aria-pressed="' + (t.id === current) + '"><strong>' + t.label + '</strong><span class="muted small">' + t.hint + '</span></button>';
+    }).join('') + '</div><button class="btn ghost block" data-act="modal-cancel">Cancel</button>');
+  }
   /** Replaces the lift in place: same position and number of sets, values cleared so old numbers can't carry over. */
   function swapEntry(entryId, exerciseId) {
     var entry = findEntry(entryId);
@@ -721,7 +1023,8 @@
         return;
       }
       entry.exerciseId = exerciseId;
-      entry.sets = entry.sets.map(newSet);
+      entry.tracking = exKind(exerciseId);
+      entry.sets = entry.sets.map(function () { return newSet(entry.tracking); });
     }
     V.focusEntry = entry.id;
     V.picker = null;
@@ -745,11 +1048,7 @@
     S.active = {
       id: uid(), name: name, templateId: templateId || null,
       startedAt: new Date().toISOString(), endedAt: null, unit: unit(),
-      exercises: (exercises || []).map(function (e) {
-        var sets = [];
-        for (var i = 0; i < e.sets; i++) sets.push(newSet());
-        return { id: uid(), exerciseId: e.exerciseId, sets: sets };
-      })
+      exercises: (exercises || []).map(function (e) { return newEntry(e.exerciseId, e.sets); })
     };
     V.screen = 'workout';
     V.rest = null;
@@ -763,14 +1062,18 @@
     var set = findSet(entry, sid); if (!set) return;
     if (set.done) { set.done = false; commit(); return; }
     var hint = M.hintFor(M.lastSessionFor(S.workouts, entry.exerciseId, S.active.id), kindIndex(entry, set), S.active.unit, set.warmup);
-    if (set.weight == null && hint) set.weight = hint.weight;
-    if (set.reps == null && hint) set.reps = hint.reps;
-    if (!(Number(set.reps) > 0)) {
-      toast('Enter reps first', 'warn');
-      render();
-      return;
+    var kind = entryKind(entry);
+    set.tracking = kind;
+    if (kind === 'timed') {
+      if (set.seconds == null && hint && hint.seconds) set.seconds = hint.seconds;
+      if (!(Number(set.seconds) > 0)) { toast('Enter seconds first', 'warn'); render(); return; }
+      set.weight = 0;
+    } else {
+      if (kind !== 'bodyweight' && set.weight == null && hint) set.weight = hint.weight;
+      if (set.reps == null && hint && hint.reps) set.reps = hint.reps;
+      if (!(Number(set.reps) > 0)) { toast('Enter reps first', 'warn'); render(); return; }
+      if (kind === 'bodyweight' || set.weight == null) set.weight = 0;
     }
-    if (set.weight == null) set.weight = 0;
     set.done = true;
     vibrate(12);
     if (V.focusEntry === entry.id && entry.sets.every(function (s) { return s.done; })) V.focusEntry = null;
@@ -791,7 +1094,7 @@
   function finishWorkout() {
     var a = S.active;
     var kept = a.exercises.map(function (e) {
-      return { id: e.id, exerciseId: e.exerciseId, sets: e.sets.filter(function (s) { return s.done; }) };
+      return { id: e.id, exerciseId: e.exerciseId, tracking: e.tracking, sets: e.sets.filter(function (s) { return s.done; }) };
     }).filter(function (e) { return e.sets.length > 0; });
     var unconfirmed = 0;
     a.exercises.forEach(function (e) { e.sets.forEach(function (s) { if (!s.done) unconfirmed++; }); });
@@ -854,7 +1157,8 @@
         if (!ok) return;
         try { localStorage.setItem(ST.KEY + ':before-restore', JSON.stringify(S)); } catch (e) { /* ignore */ }
         S = next;
-        V.screen = null; V.rest = null; V.picker = null;
+        S.settings.setupDone = true;
+        V.screen = null; V.rest = null; V.picker = null; V.edit = null;
         commit();
         toast('Backup restored');
       });
@@ -863,8 +1167,69 @@
     reader.readAsText(file);
   }
 
+  function importFitbod(file) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      var batchId = 'fb-' + uid();
+      var existing = {};
+      S.workouts.forEach(function (x) { if (x.sourceKey) existing[x.sourceKey] = true; });
+      var result;
+      try {
+        result = IM.parseFitbod(String(reader.result), { exercises: allExercises(), targetUnit: unit(), uid: uid, batchId: batchId, existingKeys: existing });
+      } catch (e) { toast(esc(e.message), 'warn', 4000); return; }
+      var st = result.stats;
+      if (!st.workouts) {
+        toast(st.duplicateDays ? 'Those days are already imported' : 'No workouts found in that file', 'warn', 3500);
+        return;
+      }
+      var range = shortDate(result.workouts[0].startedAt) + ' ' + new Date(result.workouts[0].startedAt).getFullYear() + ' to ' +
+        shortDate(result.workouts[st.workouts - 1].startedAt) + ' ' + new Date(result.workouts[st.workouts - 1].startedAt).getFullYear();
+      var created = st.created.slice(0, 5).map(esc).join(', ') + (st.created.length > 5 ? ' and ' + (st.created.length - 5) + ' more' : '');
+      confirmBox('Import from Fitbod?',
+        '<b>' + st.workouts + ' workout' + (st.workouts === 1 ? '' : 's') + '</b>, ' + st.sets + ' sets, ' + range + '.<br>' +
+        st.matched + ' exercise' + (st.matched === 1 ? '' : 's') + ' matched to your list.' +
+        (st.created.length ? '<br>' + st.created.length + ' added as custom: ' + created + '.' : '') +
+        (st.skipped ? '<br>' + st.skipped + ' row' + (st.skipped === 1 ? '' : 's') + ' skipped (no reps or time, such as distance-only cardio).' : '') +
+        (st.duplicateDays ? '<br>' + st.duplicateDays + ' day' + (st.duplicateDays === 1 ? '' : 's') + ' already imported, so left alone.' : '') +
+        '<br>Weights are shown in ' + unit() + '. You can undo this in Progress.', 'Import').then(function (ok) {
+        if (!ok) return;
+        var before = { workouts: S.workouts, customs: S.customExercises, imports: S.imports, setup: S.settings.setupDone };
+        S.workouts = S.workouts.concat(result.workouts);
+        S.customExercises = S.customExercises.concat(result.customs);
+        S.imports = S.imports.concat([{ id: batchId, source: 'Fitbod', at: new Date().toISOString(), workouts: st.workouts }]);
+        S.settings.setupDone = true;
+        if (!ST.save(S)) {
+          S.workouts = before.workouts; S.customExercises = before.customs; S.imports = before.imports; S.settings.setupDone = before.setup;
+          toast('Not enough storage on this device, so nothing was imported.', 'warn', 4000);
+          return;
+        }
+        render();
+        toast('Imported ' + st.workouts + ' workout' + (st.workouts === 1 ? '' : 's'));
+      });
+    };
+    reader.onerror = function () { toast('Couldn’t read that file', 'warn'); };
+    reader.readAsText(file);
+  }
+
+  function undoImport(id) {
+    var batch = S.imports.filter(function (b) { return b.id === id; })[0];
+    if (!batch) return;
+    var count = S.workouts.filter(function (x) { return x.importBatch === id; }).length;
+    confirmBox('Undo this import?', 'Removes ' + count + ' imported workout' + (count === 1 ? '' : 's') + ', including any you edited since. Workouts you logged here are kept.', 'Undo import', true).then(function (ok) {
+      if (!ok) return;
+      S.workouts = S.workouts.filter(function (x) { return x.importBatch !== id; });
+      var used = {};
+      S.workouts.concat(S.active ? [S.active] : []).forEach(function (x) { x.exercises.forEach(function (e) { used[e.exerciseId] = true; }); });
+      S.templates.forEach(function (t) { t.exercises.forEach(function (e) { used[e.exerciseId] = true; }); });
+      S.customExercises = S.customExercises.filter(function (e) { return e.importBatch !== id || used[e.id]; });
+      S.imports = S.imports.filter(function (b) { return b.id !== id; });
+      commit();
+      toast('Import undone');
+    });
+  }
+
   var actions = {
-    'tab': function (el) { V.tab = el.dataset.tab; V.screen = null; V.tplDraft = null; render(); },
+    'tab': function (el) { V.tab = el.dataset.tab; V.screen = null; V.tplDraft = null; V.liftId = null; render(); },
     'resume-workout': function () { V.screen = 'workout'; render(); },
     'minimize-workout': function () { V.screen = null; render(); },
     'start-empty': function () { startWorkout('Workout', null, []); },
@@ -879,7 +1244,16 @@
     },
     'set-add': function (el) {
       var entry = findEntry(el.dataset.e); if (!entry) return;
-      entry.sets.push(newSet()); commit();
+      entry.sets.push(newSet(entryKind(entry))); commit();
+    },
+    'ex-type': function (el) { var entry = findEntry(el.dataset.e); if (entry) chooseType(entry); },
+    'ex-type-set': function (el) {
+      var entry = findEntry(V.typeEntry), kind = el.dataset.v;
+      closeModal();
+      if (!entry || entryKind(entry) === kind) return;
+      if (entry.sets.some(function (s) { return s.done; })) {
+        confirmBox('Change how it’s logged?', 'This exercise’s sets will be cleared from this workout, including confirmed ones.', 'Change', true).then(function (ok) { if (ok) setEntryType(entry, kind); });
+      } else setEntryType(entry, kind);
     },
     'set-remove': function (el) {
       var entry = findEntry(el.dataset.e); if (!entry || entry.sets.length < 2) return;
@@ -981,8 +1355,11 @@
       if (p.target === 'template' && V.tplDraft) {
         ids.forEach(function (id) { V.tplDraft.exercises.push({ exerciseId: id, sets: 3 }); });
         V.picker = null; render();
+      } else if (p.target === 'edit' && V.edit) {
+        ids.forEach(function (id) { V.edit.draft.exercises.push(newEntry(id, 1)); });
+        V.picker = null; render();
       } else if (S.active) {
-        ids.forEach(function (id) { S.active.exercises.push({ id: uid(), exerciseId: id, sets: [newSet(), newSet(), newSet()] }); });
+        ids.forEach(function (id) { S.active.exercises.push(newEntry(id, 3)); });
         V.picker = null; commit();
       }
     },
@@ -991,7 +1368,7 @@
       var name = (document.getElementById('cx-name').value || '').trim();
       if (!name) { toast('Enter a name', 'warn'); return; }
       var ex = { id: 'c-' + uid(), name: name.slice(0, 80), muscle: document.getElementById('cx-muscle').value,
-        equipment: document.getElementById('cx-equip').value, side: document.getElementById('cx-side').value, custom: true };
+        equipment: document.getElementById('cx-equip').value, side: document.getElementById('cx-side').value, tracking: document.getElementById('cx-type').value, custom: true };
       S.customExercises.push(ex);
       save();
       closeModal();
@@ -1002,7 +1379,53 @@
     'modal-ok': function () { closeModal(true); },
     'modal-cancel': function () { closeModal(false); },
 
-    'history-open': function (el) { V.historyId = el.dataset.id; V.screen = 'historyDetail'; render(); },
+    'history-open': function (el) { V.historyId = el.dataset.id; V.screen = 'historyDetail'; V.tab = 'history'; render(); },
+    'history-edit': function () {
+      var wk = findWorkout(V.historyId); if (!wk) return;
+      var text = JSON.stringify(wk);
+      V.edit = { draft: JSON.parse(text), original: text };
+      V.screen = 'editWorkout';
+      render();
+    },
+    'edit-cancel': function () {
+      var leave = function () { V.edit = null; V.picker = null; V.screen = 'historyDetail'; render(); };
+      if (JSON.stringify(V.edit.draft) === V.edit.original) { leave(); return; }
+      confirmBox('Discard changes?', 'Your edits to this workout won’t be saved.', 'Discard', true).then(function (ok) { if (ok) leave(); });
+    },
+    'edit-save': saveEdit,
+    'edit-set-add': function (el) {
+      var entry = editEntry(el.dataset.e); if (!entry) return;
+      var set = newSet(entryKind(entry));
+      set.done = true;
+      entry.sets.push(set); render();
+    },
+    'edit-set-remove': function (el) {
+      var entry = editEntry(el.dataset.e); if (!entry) return;
+      entry.sets = entry.sets.filter(function (s) { return s.id !== el.dataset.s; });
+      if (!entry.sets.length) V.edit.draft.exercises = V.edit.draft.exercises.filter(function (e) { return e !== entry; });
+      render();
+    },
+    'edit-set-warm': function (el) {
+      var entry = editEntry(el.dataset.e); var set = entry && findSet(entry, el.dataset.s);
+      if (set) { set.warmup = !set.warmup; render(); }
+    },
+    'edit-ex-remove': function (el) {
+      V.edit.draft.exercises = V.edit.draft.exercises.filter(function (e) { return e.id !== el.dataset.e; });
+      render();
+    },
+    'edit-ex-add': function () { V.picker = { target: 'edit', q: '', muscle: '', selected: {} }; render(); },
+
+    'lift-open': function (el) { V.liftId = el.dataset.id; V.liftRange = 'recent'; V.screen = 'lift'; render(); },
+    'lift-back': function () { V.liftId = null; V.screen = null; V.tab = 'progress'; render(); },
+    'lift-range': function (el) { V.liftRange = el.dataset.v === 'all' ? 'all' : 'recent'; render(); },
+    'vol-tap': function (el) {
+      var read = document.querySelector('[data-vol-read]');
+      if (read) read.textContent = el.dataset.read;
+      document.querySelectorAll('.vol-col').forEach(function (c) { c.classList.toggle('picked', c === el); });
+    },
+    'setup-done': function () { S.settings.setupDone = true; V.tab = 'home'; commit(); },
+    'fitbod-pick': function () { var f = document.getElementById('fitbod-file'); if (f) { f.value = ''; f.click(); } },
+    'import-undo': function (el) { undoImport(el.dataset.id); },
     'history-back': function () { V.screen = null; V.tab = 'history'; render(); },
     'history-delete': function () {
       confirmBox('Delete this workout?', 'It will be removed from History, records and trends. This can’t be undone.', 'Delete', true).then(function (ok) {
@@ -1030,7 +1453,7 @@
     'erase-all': function () {
       confirmBox('Erase everything?', 'All workouts, saved workouts and settings on this device will be deleted. Export a backup first if you might want them.', 'Erase all', true).then(function (ok) {
         if (!ok) return;
-        S = ST.defaults(); V.screen = null; V.tab = 'home'; V.rest = null; commit();
+        S = ST.defaults(); V.screen = null; V.tab = 'home'; V.rest = null; V.edit = null; commit();
       });
     }
   };
@@ -1047,13 +1470,33 @@
     var el = ev.target;
     var f = el.dataset && el.dataset.field;
     if (!f) return;
-    if (f === 'weight' || f === 'reps') {
-      var entry = findEntry(el.dataset.e); var set = entry && findSet(entry, el.dataset.s);
+    if (f === 'weight' || f === 'reps' || f === 'seconds') {
+      var inEdit = el.dataset.scope === 'edit';
+      var entry = inEdit ? editEntry(el.dataset.e) : findEntry(el.dataset.e); var set = entry && findSet(entry, el.dataset.s);
       if (!set) return;
       var n = parseNum(el.value);
-      if (f === 'reps' && n != null) n = Math.round(n);
+      if (f !== 'weight' && n != null) n = Math.round(n);
       set[f] = n;
+      if (inEdit) return;
       clearTimeout(saveTimer); saveTimer = setTimeout(save, 250);
+      if (f === 'weight' && el.closest('.set-row.active')) {
+        var plates = document.querySelector('[data-plates]');
+        if (plates) plates.innerHTML = platesInner(n != null ? n : parseNum(el.placeholder), S.active.unit);
+      }
+    } else if (f === 'edit-name' && V.edit) {
+      V.edit.draft.name = el.value;
+    } else if (f === 'edit-date' && V.edit) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(el.value)) return;
+      var d = V.edit.draft, start = new Date(d.startedAt), length = new Date(d.endedAt) - start, parts = el.value.split('-');
+      start.setFullYear(+parts[0], +parts[1] - 1, +parts[2]);
+      d.startedAt = start.toISOString();
+      d.endedAt = new Date(start.getTime() + length).toISOString();
+    } else if (f === 'bar') {
+      var bar = parseNum(el.value);
+      if (bar > 0) {
+        if (unit() === 'kg') S.settings.barKg = bar; else S.settings.barLb = bar;
+        clearTimeout(saveTimer); saveTimer = setTimeout(save, 250);
+      }
     } else if (f === 'tpl-name' && V.tplDraft) {
       V.tplDraft.name = el.value;
     } else if (f === 'picker-q' && V.picker) {
@@ -1063,6 +1506,7 @@
   document.addEventListener('change', function (ev) {
     var el = ev.target;
     if (el.id === 'import-file' && el.files && el.files[0]) importBackup(el.files[0]);
+    if (el.id === 'fitbod-file' && el.files && el.files[0]) importFitbod(el.files[0]);
   });
   document.addEventListener('keydown', function (ev) {
     if (ev.key === 'Escape') {

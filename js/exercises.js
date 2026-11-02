@@ -105,7 +105,7 @@
     ['single-leg-calf-raise', 'Single-Leg Calf Raise', 'Calves', 'Dumbbell', 'leg'],
 
     // Core / full body
-    ['plank', 'Plank (seconds as reps)', 'Core', 'Bodyweight', ''],
+    ['plank', 'Plank', 'Core', 'Bodyweight', '', 'timed'],
     ['hanging-leg-raise', 'Hanging Leg Raise', 'Core', 'Bodyweight', ''],
     ['cable-crunch', 'Cable Crunch', 'Core', 'Cable', ''],
     ['ab-wheel', 'Ab Wheel Rollout', 'Core', 'Bodyweight', ''],
@@ -131,12 +131,24 @@
     : root.PRF.exerciseLibrary;
 
   var BUILT_IN = ROWS.map(function (r) {
-    return { id: r[0], name: r[1], muscle: r[2], equipment: r[3], side: r[4], custom: false, alias: LIBRARY.aliases[r[0]] || '' };
+    return { id: r[0], name: r[1], muscle: r[2], equipment: r[3], side: r[4], custom: false, alias: LIBRARY.aliases[r[0]] || '', tracking: r[5] || '' };
   }).concat(LIBRARY.rows.map(function (r) {
-    return { id: r[0], name: r[1], muscle: r[2], equipment: r[3], side: r[4], custom: false, library: true };
+    return { id: r[0], name: r[1], muscle: r[2], equipment: r[3], side: r[4], custom: false, library: true, tracking: r[5] || '' };
   }));
 
-  var api = { BUILT_IN: BUILT_IN, MUSCLES: MUSCLES, EQUIPMENT: EQUIPMENT };
+  // How a lift is logged. Stored on each workout entry and set when it's logged.
+  var TRACKING = [
+    { id: 'weight', label: 'Weight × reps', hint: 'Most lifts' },
+    { id: 'bodyweight', label: 'Reps only', hint: 'Body weight, nothing added' },
+    { id: 'weighted', label: 'Added weight × reps', hint: 'Body weight plus a belt or vest' },
+    { id: 'assisted', label: 'Assistance × reps', hint: 'Machine or band help; less is harder' },
+    { id: 'timed', label: 'Seconds', hint: 'Holds like a plank' }
+  ];
+  function defaultTracking(ex) {
+    return ex.tracking || (ex.equipment === 'Bodyweight' ? 'bodyweight' : 'weight');
+  }
+
+  var api = { BUILT_IN: BUILT_IN, MUSCLES: MUSCLES, EQUIPMENT: EQUIPMENT, TRACKING: TRACKING, defaultTracking: defaultTracking };
 
   root.PRF = root.PRF || {};
   root.PRF.exercises = api;

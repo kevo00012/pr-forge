@@ -5,8 +5,10 @@
  *     exercises: [{ id, exerciseId, sets: [{ id, weight, reps, done, warmup }] }] }
  * Weights are stored in the workout's own unit; everything here compares in lb.
  *
- * A "working set" is confirmed (done), not a warm-up, and has reps > 0.
- * Per-arm/per-leg sets count once (weight x reps) — volume is never doubled. */
+ * A "working set" is confirmed (done), not a warm-up, and has reps > 0 or seconds > 0.
+ * Per-arm/per-leg sets count once (weight x reps) — volume is never doubled.
+ * set.tracking: 'assisted' sets store the help as weight, so they add no volume and no 1RM;
+ * 'timed' sets store seconds instead of reps. Other sets work from weight and reps. */
 (function (root) {
   'use strict';
 
@@ -23,8 +25,9 @@
   }
 
   function isWorkingSet(set) {
-    return !!(set && set.done && !set.warmup && num(set.reps) > 0);
+    return !!(set && set.done && !set.warmup && (num(set.reps) > 0 || num(set.seconds) > 0));
   }
+  function isTimed(set) { return set.tracking === 'timed' || (num(set.seconds) > 0 && !(num(set.reps) > 0)); }
 
   /** Estimated one-rep max (Epley). 1 rep = the weight itself. */
   function e1rm(weightLb, reps) {
@@ -35,7 +38,7 @@
   }
 
   function setVolumeLb(set, unit) {
-    if (!isWorkingSet(set)) return 0;
+    if (!isWorkingSet(set) || set.tracking === 'assisted') return 0;
     return units.toLb(set.weight, unit) * num(set.reps);
   }
 
@@ -64,7 +67,7 @@
 
   /** Summarise one exercise inside one workout (merging repeated entries). */
   function summarise(workout, exerciseId, skipSetId) {
-    var out = { topE1rm: 0, topWeightLb: 0, topWeightReps: 0, bestE1rmSet: null, maxBwReps: 0, volumeLb: 0, sets: 0 };
+    var out = { topE1rm: 0, topWeightLb: 0, topWeightReps: 0, bestE1rmSet: null, maxBwReps: 0, maxSeconds: 0, leastAssistLb: null, assistReps: 0, volumeLb: 0, sets: 0 };
     (workout.exercises || []).forEach(function (ex) {
       if (ex.exerciseId !== exerciseId) return;
       (ex.sets || []).forEach(function (s) {
@@ -72,6 +75,14 @@
         var lb = units.toLb(s.weight, workout.unit);
         var reps = num(s.reps);
         out.sets++;
+        if (isTimed(s)) { out.maxSeconds = Math.max(out.maxSeconds, num(s.seconds)); return; }
+        if (s.tracking === 'assisted') {
+          if (out.leastAssistLb === null || lb < out.leastAssistLb || (lb === out.leastAssistLb && reps > out.assistReps)) {
+            out.leastAssistLb = lb;
+            out.assistReps = reps;
+          }
+          return;
+        }
         out.volumeLb += lb * reps;
         if (lb > 0) {
           var est = e1rm(lb, reps);
@@ -117,19 +128,26 @@
     var entry = (active.exercises || []).filter(function (e) { return e.id === entryId; })[0];
     if (!entry) return null;
     var set = (entry.sets || []).filter(function (s) { return s.id === setId; })[0];
-    if (!isWorkingSet(set)) return null;
+    if (!isWorkingSet(set) || set.tracking === 'assisted') return null;
 
     var history = sessionsFor(workouts, entry.exerciseId, active.id);
     if (history.length === 0) return null; // first-ever session of this lift
 
-    var priorE1rm = 0, priorReps = 0;
+    var priorE1rm = 0, priorReps = 0, priorSeconds = 0;
     history.forEach(function (h) {
       if (h.topE1rm > priorE1rm) priorE1rm = h.topE1rm;
       if (h.maxBwReps > priorReps) priorReps = h.maxBwReps;
+      if (h.maxSeconds > priorSeconds) priorSeconds = h.maxSeconds;
     });
     var today = summarise(active, entry.exerciseId, set.id); // other sets already done today
     priorE1rm = Math.max(priorE1rm, today.topE1rm);
     priorReps = Math.max(priorReps, today.maxBwReps);
+    priorSeconds = Math.max(priorSeconds, today.maxSeconds);
+
+    if (isTimed(set)) {
+      var secs = num(set.seconds);
+      return priorSeconds > 0 && secs > priorSeconds ? { type: 'seconds', seconds: secs, previous: priorSeconds } : null;
+    }
 
     var lb = units.toLb(set.weight, active.unit);
     var reps = num(set.reps);
@@ -146,29 +164,35 @@
     return null;
   }
 
-  /** Every PR event in history (one per exercise per session, never the first session). */
+  /**
+   * Every PR event in history (one per exercise per session, never the first session).
+   * Imported and edited workouts raise the bar for later sessions but never earn a PR themselves.
+   */
   function prEvents(workouts) {
-    var best = {}; // exerciseId -> { e1rm, reps }
+    var best = {}; // exerciseId -> { e1rm, reps, seconds }
     var events = [];
     finished(workouts).forEach(function (w) {
       var ids = {};
+      var eligible = !w.imported && !w.edited;
       (w.exercises || []).forEach(function (ex) { ids[ex.exerciseId] = true; });
       Object.keys(ids).forEach(function (id) {
         var s = summarise(w, id);
         if (s.sets === 0) return;
         var b = best[id];
-        if (b) {
+        if (b && eligible) {
           if (s.topE1rm > 0 && b.e1rm > 0 && s.topE1rm > b.e1rm + EPS_LB) {
             events.push({ workoutId: w.id, date: w.startedAt, exerciseId: id, type: 'e1rm',
               e1rmLb: s.topE1rm, weightLb: s.bestE1rmSet.weightLb, reps: s.bestE1rmSet.reps });
           } else if (s.topE1rm === 0 && s.maxBwReps > 0 && b.reps > 0 && s.maxBwReps > b.reps) {
             events.push({ workoutId: w.id, date: w.startedAt, exerciseId: id, type: 'reps', reps: s.maxBwReps });
+          } else if (s.maxSeconds > 0 && b.seconds > 0 && s.maxSeconds > b.seconds) {
+            events.push({ workoutId: w.id, date: w.startedAt, exerciseId: id, type: 'seconds', seconds: s.maxSeconds });
           }
-        } else {
-          b = best[id] = { e1rm: 0, reps: 0 };
         }
+        if (!b) b = best[id] = { e1rm: 0, reps: 0, seconds: 0 };
         b.e1rm = Math.max(b.e1rm, s.topE1rm);
         b.reps = Math.max(b.reps, s.maxBwReps);
+        b.seconds = Math.max(b.seconds, s.maxSeconds);
       });
     });
     return events;
@@ -184,7 +208,7 @@
         var s = summarise(w, id);
         if (s.sets === 0) return;
         var r = map[id] || (map[id] = { exerciseId: id, sessions: 0, lastDate: null,
-          bestE1rm: null, heaviest: null, maxBwReps: null });
+          bestE1rm: null, heaviest: null, maxBwReps: null, maxSeconds: null, leastAssist: null });
         r.sessions++;
         r.lastDate = w.startedAt;
         if (s.topE1rm > 0 && (!r.bestE1rm || s.topE1rm > r.bestE1rm.e1rmLb + EPS_LB)) {
@@ -195,6 +219,12 @@
         }
         if (s.maxBwReps > 0 && (!r.maxBwReps || s.maxBwReps > r.maxBwReps.reps)) {
           r.maxBwReps = { reps: s.maxBwReps, date: w.startedAt };
+        }
+        if (s.maxSeconds > 0 && (!r.maxSeconds || s.maxSeconds > r.maxSeconds.seconds)) {
+          r.maxSeconds = { seconds: s.maxSeconds, date: w.startedAt };
+        }
+        if (s.leastAssistLb !== null && (!r.leastAssist || s.leastAssistLb < r.leastAssist.weightLb)) {
+          r.leastAssist = { weightLb: s.leastAssistLb, reps: s.assistReps, date: w.startedAt };
         }
       });
     });
@@ -260,35 +290,90 @@
     };
   }
 
+  /** Last `weeks` calendar weeks of volume, oldest first; the final one is this week. */
+  function weeklySeries(workouts, now, weeks) {
+    var count = weeks || 8;
+    var thisWeek = startOfWeek(now || new Date());
+    var out = [];
+    for (var i = count - 1; i >= 0; i--) {
+      var start = addDays(thisWeek, -7 * i);
+      out.push({ weekStart: start.toISOString(), start: start, end: addDays(start, 7), volumeLb: 0, count: 0 });
+    }
+    finished(workouts).forEach(function (w) {
+      var t = new Date(w.startedAt);
+      out.forEach(function (o) {
+        if (t >= o.start && t < o.end) { o.volumeLb += workoutVolumeLb(w); o.count++; }
+      });
+    });
+    return out.map(function (o) { return { weekStart: o.weekStart, volumeLb: o.volumeLb, count: o.count }; });
+  }
+
+  /** Workouts this week, and the average per week over the four weeks before it. */
+  function workoutFrequency(workouts, now) {
+    var series = weeklySeries(workouts, now, 5);
+    var prior = series.slice(0, 4).reduce(function (a, o) { return a + o.count; }, 0);
+    return { thisWeek: series[4].count, priorAverage: prior / 4 };
+  }
+
+  var METRICS = {
+    e1rm: function (s) { return s.topE1rm; },
+    reps: function (s) { return s.maxBwReps; },
+    seconds: function (s) { return s.maxSeconds; }
+  };
+
   /**
-   * Per-lift trend, explained in plain words. Based on each session's best
-   * estimated 1RM. Lifts trained in the last `windowDays` (default 56) only.
-   * status: 'building' (<3 sessions) | 'progressing' (new best within the last 3 sessions)
+   * Per-lift trend, explained in plain words. Based on each session's best estimated 1RM, or
+   * best reps / longest hold for lifts without weight. Assisted lifts have no trend, because
+   * less help and more reps can't be compared. Lifts trained in the last `windowDays` (default 56) only.
+   * status: 'building' (<3 sessions) | 'paused' (no session in 14+ days)
+   *         | 'down' (last two sessions over 5% under the best of the six weeks before them)
+   *         | 'progressing' (new best within the last 3 sessions)
    *         | 'holding' (3–4 sessions since best) | 'stalled' (5+ sessions since best)
    */
   function liftTrends(workouts, now, windowDays) {
-    var cutoff = new Date((now || new Date()).getTime() - (windowDays || 56) * DAY_MS);
+    var at = now || new Date();
+    var cutoff = new Date(at.getTime() - (windowDays || 56) * DAY_MS);
     var ids = {};
     finished(workouts).forEach(function (w) {
       (w.exercises || []).forEach(function (ex) { ids[ex.exerciseId] = true; });
     });
     var out = [];
     Object.keys(ids).forEach(function (id) {
-      var sessions = sessionsFor(workouts, id).filter(function (s) { return s.topE1rm > 0; });
-      if (sessions.length === 0) return;
+      var all = sessionsFor(workouts, id);
+      if (all.length === 0) return;
+      var newest = all[all.length - 1];
+      var metric = newest.topE1rm > 0 ? 'e1rm' : newest.maxSeconds > 0 ? 'seconds' : newest.maxBwReps > 0 ? 'reps' : null;
+      if (!metric) return;
+      var value = METRICS[metric];
+      var eps = metric === 'e1rm' ? EPS_LB : 0;
+      var sessions = all.filter(function (s) { return value(s) > 0; });
       var last = sessions[sessions.length - 1];
       if (new Date(last.date) < cutoff) return;
 
       var best = 0, bestIdx = 0;
       sessions.forEach(function (s, i) {
-        if (s.topE1rm > best + EPS_LB) { best = s.topE1rm; bestIdx = i; }
+        if (value(s) > best + eps) { best = value(s); bestIdx = i; }
       });
       var n = sessions.length;
       var since = n - 1 - bestIdx;
+      var idle = Math.floor((at - new Date(last.date)) / DAY_MS);
+      var lastTwo = sessions.slice(-2);
+      var windowStart = new Date(new Date(lastTwo[0].date).getTime() - 42 * DAY_MS);
+      var priorBest = 0;
+      sessions.slice(0, -2).forEach(function (s) {
+        if (new Date(s.date) >= windowStart) priorBest = Math.max(priorBest, value(s));
+      });
+      var bothDown = priorBest > 0 && lastTwo.every(function (s) { return value(s) < priorBest * 0.95; });
       var status, text;
       if (n < 3) {
         status = 'building';
         text = 'Log ' + (3 - n) + ' more session' + (3 - n === 1 ? '' : 's') + ' to see a trend';
+      } else if (idle >= 14) {
+        status = 'paused';
+        text = 'No session in ' + idle + ' days';
+      } else if (bothDown) {
+        status = 'down';
+        text = 'Last 2 sessions under your recent best';
       } else if (since <= 2) {
         status = 'progressing';
         text = since === 0 ? 'New best last session'
@@ -301,9 +386,12 @@
         text = 'No new best in ' + since + ' sessions';
       }
       out.push({
-        exerciseId: id, status: status, text: text, sessions: n,
-        bestE1rmLb: best, lastE1rmLb: last.topE1rm, lastDate: last.date,
-        spark: sessions.slice(-8).map(function (s) { return s.topE1rm; })
+        exerciseId: id, status: status, text: text, sessions: n, metric: metric, best: best,
+        bestE1rmLb: metric === 'e1rm' ? best : 0, lastE1rmLb: last.topE1rm, lastDate: last.date,
+        spark: sessions.slice(-8).map(value),
+        points: sessions.map(function (s) {
+          return { date: s.date, workoutId: s.workoutId, value: value(s), set: s.bestE1rmSet };
+        })
       });
     });
     return out.sort(function (a, b) { return new Date(b.lastDate) - new Date(a.lastDate); });
@@ -319,7 +407,7 @@
       (w.exercises || []).forEach(function (ex) {
         if (ex.exerciseId !== exerciseId) return;
         (ex.sets || []).forEach(function (s) {
-          if (s.done && num(s.reps) > 0) sets.push({ weight: num(s.weight), reps: num(s.reps), warmup: !!s.warmup });
+          if (s.done && (num(s.reps) > 0 || num(s.seconds) > 0)) sets.push({ weight: num(s.weight), reps: num(s.reps), seconds: num(s.seconds), warmup: !!s.warmup });
         });
       });
       if (sets.length) return { workoutId: w.id, date: w.startedAt, unit: w.unit, sets: sets };
@@ -338,7 +426,9 @@
     if (!pool.length) pool = last.sets;
     var s = pool[Math.min(index, pool.length - 1)];
     var weight = s.weight > 0 ? units.roundForEntry(units.convert(s.weight, last.unit, targetUnit)) : 0;
-    return { weight: weight, reps: s.reps };
+    var hint = { weight: weight, reps: s.reps };
+    if (s.seconds > 0) hint.seconds = s.seconds;
+    return hint;
   }
 
   /** Suggest the template done least recently (never-done ones first, in list order). */
@@ -372,6 +462,8 @@
     startOfWeek: startOfWeek,
     weeklySummary: weeklySummary,
     liftTrends: liftTrends,
+    weeklySeries: weeklySeries,
+    workoutFrequency: workoutFrequency,
     lastSessionFor: lastSessionFor,
     hintFor: hintFor,
     suggestNext: suggestNext

@@ -10,9 +10,10 @@ Live at: **https://kevo00012.github.io/pr-forge/**
 
 - **Today:** this week's day strip, an "Up next" workout (the saved workout you've gone longest without doing), and highlights (this week's volume, vs last week, PRs this week). It never shows -100%.
 - **Workouts:** saved workouts (exercises + number of sets). Starting one fills in last session's numbers as faded hints. Hints only count once you confirm the set.
-- **Active workout:** one exercise open at a time with its current set outlined in orange; tap any other exercise to open it. An open exercise can be swapped for another or moved up or down. Weight / reps / ✓ for each set. Tap a set number to mark it as a warm-up. Per-arm and per-leg exercises show "Per arm"/"Per leg" and are never double-counted. You get a rest timer, a full-screen PR panel when a working set beats your previous best estimated 1RM (never on the first session of a lift or on warm-ups), and you can switch tabs while a workout is running. Finishing shows a "Workout saved" summary.
-- **Progress:** per-lift trend rows (Progressing / Holding / Stalled / Building data) with a plain explanation of how they're worked out, personal records, lb/kg, rest timer length, backup export/restore, and erase.
-- **History:** finished workouts by month, with details, "Save as a workout", and delete.
+- **First open:** a welcome screen explains that data stays on the phone, how to add it to the home screen, and sets units and rest timer. It also offers Fitbod import and backup restore.
+- **Active workout:** one exercise open at a time with its current set outlined in orange; tap any other exercise to open it. An open exercise can be swapped for another or moved up or down. Barbell lifts show the plates per side under the current set (bar weight is in Progress settings). Each lift can be logged as weight × reps, reps only, added weight, assistance or seconds, and the choice is remembered. Weight / reps / ✓ for each set. Tap a set number to mark it as a warm-up. Per-arm and per-leg exercises show "Per arm"/"Per leg" and are never double-counted. You get a rest timer, a full-screen PR panel when a working set beats your previous best estimated 1RM (never on the first session of a lift or on warm-ups), and you can switch tabs while a workout is running. Finishing shows a "Workout saved" summary.
+- **Progress:** weekly volume chart and training frequency, per-lift trends (Progressing / Holding / Stalled / Down / Paused / Building data) grouped by what needs attention, with a plain explanation of how they're worked out. Tap a lift for its chart, sessions and ideas to try. Also personal records, lb/kg, rest timer length, bar weight, Fitbod import with undo, backup export/restore, and erase.
+- **History:** finished workouts by month, with details, editing (name, date, sets, exercises), "Save as a workout", and delete. Edited and imported workouts never count as PRs, but later sessions still have to beat them.
 - 895 built-in exercises (common ones listed first) plus your own custom ones. Works offline once it has loaded over the internet.
 
 ## Try it on your PC
@@ -36,7 +37,7 @@ Double-click `index.html`. It opens in your browser and works. (Offline caching 
 
 ### Updating later
 
-Upload the changed files to the repo again (same "Add file → Upload files" button, then commit). Before uploading, bump the version in `sw.js` (`CACHE = 'pr-forge-web-1.1.2'`) so phones fetch the new files.
+Upload the changed files to the repo again (same "Add file → Upload files" button, then commit). Before uploading, bump the version in `sw.js` (`CACHE = 'pr-forge-web-1.4.1'`) so phones fetch the new files.
 
 ## Your data
 
@@ -54,7 +55,7 @@ The `icons` folder holds the logo, cropped to its badge and resized from the ori
 ## For developers
 
 - Plain HTML/CSS/JavaScript, no build step, no dependencies.
-- `js/units.js`, `js/metrics.js`, `js/store.js`, and `js/exercises.js` are pure logic. `js/app.js` is the UI.
+- `js/units.js`, `js/metrics.js`, `js/store.js`, `js/plates.js`, `js/importers.js`, and `js/exercises.js` are pure logic. `js/app.js` is the UI.
 - Tests: open a terminal in this folder and run `node --test` (needs Node 20+).
 - Exercise list: `js/exercise-library.js` is generated from [free-exercise-db](https://github.com/yuhonas/free-exercise-db) (Unlicense) by `node tools/build-exercises.js path/to/exercises.json`. Only names, muscles and equipment are kept. Per-arm and per-leg labels are worked out from exercise names.
 - Local server: run `node tools/serve.js`, then open http://localhost:8000/. The offline cache stays off on localhost, so a refresh always shows your latest edits.

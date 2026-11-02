@@ -13,10 +13,11 @@
   function defaults() {
     return {
       schema: SCHEMA,
-      settings: { unit: 'lb', restSeconds: 90 },
+      settings: { unit: 'lb', restSeconds: 90, barLb: 45, barKg: 20, exerciseTypes: {}, setupDone: false },
       customExercises: [],
       templates: [],
       workouts: [],
+      imports: [],
       active: null
     };
   }
@@ -29,19 +30,29 @@
     return isFinite(n) ? n : null;
   }
 
+  var TRACKING = ['weight', 'bodyweight', 'weighted', 'assisted', 'timed'];
+  function trackingOrNull(v) { return TRACKING.indexOf(v) !== -1 ? v : null; }
+  function posOr(v, fallback) {
+    var n = Number(v);
+    return isFinite(n) && n > 0 ? n : fallback;
+  }
+
   function cleanSet(s) {
-    return {
+    var out = {
       id: String(s.id || uid()),
       weight: numOrNull(s.weight),
       reps: numOrNull(s.reps),
+      seconds: numOrNull(s.seconds),
       done: !!s.done,
       warmup: !!s.warmup
     };
+    if (trackingOrNull(s.tracking)) out.tracking = s.tracking;
+    return out;
   }
 
   function cleanWorkout(w) {
     if (!isObj(w) || !w.startedAt || isNaN(new Date(w.startedAt))) return null;
-    return {
+    var out = {
       id: String(w.id || uid()),
       name: String(w.name || 'Workout'),
       templateId: w.templateId ? String(w.templateId) : null,
@@ -49,9 +60,16 @@
       endedAt: w.endedAt && !isNaN(new Date(w.endedAt)) ? new Date(w.endedAt).toISOString() : null,
       unit: w.unit === 'kg' ? 'kg' : 'lb',
       exercises: arr(w.exercises).filter(function (e) { return isObj(e) && e.exerciseId; }).map(function (e) {
-        return { id: String(e.id || uid()), exerciseId: String(e.exerciseId), sets: arr(e.sets).filter(isObj).map(cleanSet) };
+        var entry = { id: String(e.id || uid()), exerciseId: String(e.exerciseId), sets: arr(e.sets).filter(isObj).map(cleanSet) };
+        if (trackingOrNull(e.tracking)) entry.tracking = e.tracking;
+        return entry;
       })
     };
+    if (w.edited) out.edited = true;
+    if (w.imported) out.imported = true;
+    if (w.importBatch) out.importBatch = String(w.importBatch);
+    if (w.sourceKey) out.sourceKey = String(w.sourceKey);
+    return out;
   }
 
   /** Accepts anything; returns a valid state (unknown fields dropped). Throws if it isn't PR Forge data. */
@@ -64,13 +82,23 @@
     d.settings.unit = st.unit === 'kg' ? 'kg' : 'lb';
     var rest = Number(st.restSeconds);
     d.settings.restSeconds = isFinite(rest) && rest >= 0 && rest <= 600 ? Math.round(rest) : 90;
+    d.settings.barLb = posOr(st.barLb, 45);
+    d.settings.barKg = posOr(st.barKg, 20);
+    if (isObj(st.exerciseTypes)) {
+      Object.keys(st.exerciseTypes).forEach(function (id) {
+        if (trackingOrNull(st.exerciseTypes[id])) d.settings.exerciseTypes[id] = st.exerciseTypes[id];
+      });
+    }
 
     d.customExercises = arr(raw.customExercises).filter(function (e) { return isObj(e) && e.id && e.name; }).map(function (e) {
-      return {
+      var ex = {
         id: String(e.id), name: String(e.name).slice(0, 80),
         muscle: String(e.muscle || 'Other'), equipment: String(e.equipment || 'Other'),
         side: e.side === 'arm' || e.side === 'leg' ? e.side : '', custom: true
       };
+      if (trackingOrNull(e.tracking)) ex.tracking = e.tracking;
+      if (e.importBatch) ex.importBatch = String(e.importBatch);
+      return ex;
     });
     d.templates = arr(raw.templates).filter(function (t) { return isObj(t) && t.id; }).map(function (t) {
       return {
@@ -84,6 +112,11 @@
     d.workouts = arr(raw.workouts).map(cleanWorkout).filter(function (w) { return w && w.endedAt; });
     var active = raw.active ? cleanWorkout(raw.active) : null;
     d.active = active && !active.endedAt ? active : null;
+    d.imports = arr(raw.imports).filter(function (b) { return isObj(b) && b.id; }).map(function (b) {
+      return { id: String(b.id), source: String(b.source || 'Fitbod'), at: String(b.at || ''), workouts: Number(b.workouts) || 0 };
+    });
+    // Anyone who already has data has clearly got past the welcome screen.
+    d.settings.setupDone = st.setupDone === true || d.workouts.length > 0 || d.templates.length > 0 || !!d.active;
     return d;
   }
 

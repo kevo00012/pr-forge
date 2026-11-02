@@ -37,7 +37,7 @@ Double-click `index.html`. It opens in your browser and works. (Offline caching 
 
 ### Updating later
 
-Upload the changed files to the repo again (same "Add file → Upload files" button, then commit). Before uploading, bump the version in `sw.js` (`CACHE = 'pr-forge-web-1.4.1'`) so phones fetch the new files.
+Upload the changed files to the repo again (same "Add file → Upload files" button, then commit). Before uploading, bump the version in `sw.js` (`CACHE = 'pr-forge-web-1.4.2'`) so phones fetch the new files.
 
 ## Your data
 
@@ -49,6 +49,7 @@ Upload the changed files to the repo again (same "Add file → Upload files" but
 The `icons` folder holds the logo, cropped to its badge and resized from the original artwork:
 
 - `logo.png`: the splash logo (if it can't load, the splash shows the text "PR FORGE")
+- `wordmark.png`: the logo's "PR FORGE" lettering on a transparent background, used in the Today header
 - `apple-touch-icon.png`: 180×180, the iPhone home-screen icon
 - `icon-192.png` and `icon-512.png`: Android/desktop install icons and the browser tab icon
 

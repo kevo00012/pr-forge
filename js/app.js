@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers;
-  var VERSION = '1.4.0';
+  var VERSION = '1.4.1';
 
   var S = ST.load();
   var V = {
@@ -392,7 +392,7 @@
       '</section>';
 
     return '<header class="top row end"><div class="top"><p class="eyebrow">' + now.toLocaleDateString('en-US', { weekday: 'long' }) + ' · ' + now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + '</p><h1>Today</h1></div>' +
-      '<span class="wordmark sm">PR <span>FORGE</span></span></header>' +
+      '<img class="wordmark-img" src="icons/wordmark.png" width="136" height="16" alt="PR Forge"></header>' +
       '<section class="week-wrap" aria-label="This week"><div class="week">' + strip + '</div><p class="week-line">' + weekLine + '</p></section>' +
       upNext + highlights;
   }

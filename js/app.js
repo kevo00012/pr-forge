@@ -745,7 +745,7 @@
   // A one-time joke question before setup. Both answers are yes.
   function viewGreet() {
     return '<section class="greet"><img class="setup-logo" src="icons/logo.png" alt="PR Forge logo" onerror="this.remove()">' +
-      '<h1 class="big">Are you a sexy ass biiitch?</h1>' +
+      '<h1 class="big">Are you a sexy ass bitch?</h1>' +
       '<div class="foot-actions"><button class="btn primary block" data-act="greet-yes">Hell yes</button>' +
       '<button class="btn primary block" data-act="greet-yes">Obviously</button></div></section>';
   }

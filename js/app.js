@@ -5,8 +5,8 @@
 (function () {
   'use strict';
 
-  var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers;
-  var VERSION = '1.4.2';
+  var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
+  var VERSION = '1.5.0';
 
   var S = ST.load();
   var V = {
@@ -25,7 +25,7 @@
     focusEntry: null,     // exercise opened by tap; otherwise the first with sets left
     summary: null,        // id of the workout just finished (shows "Workout saved")
     modal: null,          // { resolve }
-    greeted: false        // answered the first-open question (this visit only; setup itself is saved)
+    greeted: false        // answered the first-open question (this visit only)
   };
   var app = document.getElementById('app');
   var lastViewKey = '';
@@ -40,6 +40,7 @@
   function unit() { return S.settings.unit; }
   function save() {
     if (!ST.save(S)) toast('Couldn’t save — this browser’s storage may be full. Export a backup.', 'warn');
+    CLOUD.changed();
   }
   function commit() { save(); render(); }
 
@@ -276,14 +277,24 @@
 
   // ---------- render ----------
   function viewKey() {
-    if (needsSetup()) return V.greeted ? 'setup' : 'greet';
+    var g = gate();
+    if (g) return g;
+    if (needsSetup()) return 'setup';
     return V.screen ? V.screen + ':' + (V.screen === 'lift' ? V.liftId : V.historyId || '') : 'tab:' + V.tab;
   }
   function needsSetup() { return !S.settings.setupDone && !S.active; }
+  /** 'greet' or 'signin' while nobody has signed in on this phone, else ''. */
+  function gate() {
+    if (CLOUD.owner()) return '';
+    if (!V.greeted && !S.settings.setupDone && !S.active && !CLOUD.returningFromSignIn()) return 'greet';
+    return 'signin';
+  }
 
   function render() {
     var body;
-    if (needsSetup()) body = V.greeted ? viewSetup() : viewGreet();
+    var g = gate();
+    if (g) body = g === 'greet' ? viewGreet() : viewSignIn();
+    else if (needsSetup()) body = viewSetup();
     else if (V.screen === 'workout' && S.active) body = viewWorkout();
     else if (V.screen === 'template' && V.tplDraft) body = viewTemplateEditor();
     else if (V.screen === 'editWorkout' && V.edit) body = viewEditWorkout();
@@ -297,10 +308,10 @@
     var keepScroll = key === lastViewKey ? window.scrollY : 0;
     lastViewKey = key;
 
-    var noTabs = needsSetup() || V.screen === 'editWorkout' || (V.screen === 'historyDetail' && V.summary === V.historyId);
+    var noTabs = !!g || needsSetup() || V.screen === 'editWorkout' || (V.screen === 'historyDetail' && V.summary === V.historyId);
     app.innerHTML =
       '<main class="screen' + (noTabs ? ' no-tabs' : '') + '">' + body + '</main>' +
-      (S.active && V.screen !== 'workout' && V.screen !== 'editWorkout' ? activeBar() : '') +
+      (S.active && !g && V.screen !== 'workout' && V.screen !== 'editWorkout' ? activeBar() : '') +
       (V.screen === 'workout' ? restBar() : '') +
       (noTabs ? '' : tabBar()) +
       (V.picker ? viewPicker() : '') +
@@ -631,16 +642,16 @@
       '<b>Down</b> = your last 2 sessions were over 5% under your best of the 6 weeks before them. <b>Paused</b> = no session in 14 days or more. ' +
       'Warm-ups don’t count, and assisted lifts have no trend. Only lifts trained in the last 8 weeks are shown.</p></details>' +
       '<section class="card"><h2 class="card-title">Personal records</h2><ul class="prs">' + prHtml + '</ul></section>' +
-      '<section class="card"><h2 class="card-title">Settings &amp; data</h2>' +
+      '<section class="card"><h2 class="card-title">Settings &amp; data</h2>' + accountHtml() +
       '<div class="setting"><span>Units</span><div class="seg"><button class="' + (unit() === 'lb' ? 'on' : '') + '" data-act="set-unit" data-v="lb">lb</button>' +
       '<button class="' + (unit() === 'kg' ? 'on' : '') + '" data-act="set-unit" data-v="kg">kg</button></div></div>' +
       '<div class="setting col"><span>Rest timer after each set</span><div class="chips">' + restChips + '</div></div>' +
       '<label class="setting"><span>Bar weight (' + unit() + ')</span><input class="bar-input" data-field="bar" inputmode="decimal" autocomplete="off" value="' + U.fmtNum(barFor(unit())) + '"></label>' +
       '<div class="setting col"><span>Import from Fitbod</span><p class="muted small">Export your workouts from Fitbod’s settings as a CSV file, then choose it here. Imported workouts never count as PRs, but later sessions have to beat them.</p>' +
       '<button class="btn ghost block" data-act="fitbod-pick">Choose Fitbod file</button>' + importsHtml() + '</div>' +
-      '<div class="setting col"><span>Backup</span><p class="muted small">Your workouts are saved only in this browser on this device. Export a backup now and then, and before switching phones.</p>' +
+      '<div class="setting col"><span>Backup file</span><p class="muted small">Your workouts back up to your account automatically. You can also save a copy as a file, or restore one (this replaces everything, here and in your account).</p>' +
       '<div class="row-2"><button class="btn ghost" data-act="export">Export backup</button><button class="btn ghost" data-act="import">Restore backup</button></div></div>' +
-      '<button class="btn danger-ghost block" data-act="erase-all">Erase all data on this device</button>' +
+      '<button class="btn danger-ghost block" data-act="erase-all">Erase all my data</button>' +
       '<p class="muted small center">PR Forge web ' + VERSION + ' · ' + S.workouts.length + ' workouts saved</p></section>' +
       fileInputs();
   }
@@ -741,6 +752,54 @@
       '<p class="muted small tip">Trends are an early signal, not a diagnosis. Fatigue, technique and rep range all affect them.</p>';
   }
 
+  // ----- Sign in (required before the app can be used) -----
+  function viewSignIn() {
+    var err = CLOUD.signInError();
+    var busy = CLOUD.returningFromSignIn() && !err;
+    var hasData = S.workouts.length > 0 || S.templates.length > 0 || !!S.active;
+    return '<section class="greet"><img class="setup-logo" src="icons/logo.png" alt="PR Forge logo" onerror="this.remove()">' +
+      '<h1>' + (busy ? 'Signing you in…' : 'Sign in') + '</h1>' +
+      (busy ? '<p class="lede">Hang on a second.</p>' :
+        '<p class="lede">Your workouts are kept on this phone and backed up to your own account, so they come back if you change phones. Only you can see them.</p>' +
+        (hasData ? '<p class="small">The workouts already on this phone will be backed up when you sign in.</p>' : '') +
+        (err ? '<p class="small warn-text">Sign-in didn’t work: ' + esc(err) + '. Try again.</p>' : '') +
+        (navigator.onLine ? '' : '<p class="small warn-text">You’re offline. Signing in needs a connection the first time; after that the app works without one.</p>') +
+        '<div class="foot-actions"><button class="btn primary block" data-act="sign-in">Continue with Google</button></div>') +
+      '</section>';
+  }
+
+  // ----- Account and backup status (Progress → Settings) -----
+  function syncText() {
+    var st = CLOUD.status(), n = CLOUD.pending(), last = CLOUD.lastSyncAt();
+    var waiting = n ? n + (n === 1 ? ' change' : ' changes') + ' waiting to upload.' : '';
+    if (st.state === 'syncing') return 'Backing up…';
+    if (st.state === 'offline') return 'Offline. ' + (waiting ? waiting.replace('.', '') + ' when you’re back online.' : 'Everything was backed up.');
+    if (st.state === 'signin') return 'Your Google sign-in expired. Sign in again to keep backing up.' + (waiting ? ' ' + waiting : '');
+    if (st.state === 'error') return 'Backup problem: ' + (st.message || 'unknown error') + '. ' + waiting;
+    if (n) return waiting;
+    if (last) {
+      var mins = Math.round((Date.now() - new Date(last)) / 60000);
+      return 'Backed up ' + (mins < 1 ? 'just now' : mins < 60 ? mins + ' min ago' : relDay(last).toLowerCase()) + '.';
+    }
+    return 'Not backed up yet.';
+  }
+  function accountHtml() {
+    var o = CLOUD.owner();
+    if (!o) return '';
+    var expired = CLOUD.status().state === 'signin';
+    return '<div class="setting col"><span>Account</span><p class="muted small">Signed in as <strong>' + esc(o.email || 'Google account') + '</strong>. ' +
+      '<span data-sync-status>' + esc(syncText()) + '</span></p>' +
+      (expired ? '<button class="btn primary block" data-act="sign-in">Sign in again</button>' : '') +
+      '<div class="row-2"><button class="btn ghost" data-act="sync-now">Back up now</button><button class="btn ghost" data-act="sign-out">Sign out</button></div></div>';
+  }
+  function showSyncStatus() {
+    var el = document.querySelector('[data-sync-status]');
+    if (el) el.textContent = syncText();
+    var need = CLOUD.status().state === 'signin';
+    var btn = document.querySelector('.setting [data-act="sign-in"]');
+    if (need !== !!btn && V.tab === 'progress' && !V.screen) render();
+  }
+
   // ----- First open -----
   // A one-time joke question before setup. Both answers are yes.
   function viewGreet() {
@@ -758,9 +817,8 @@
     return '<header class="setup-head"><img class="setup-logo" src="icons/logo.png" alt="PR Forge logo" onerror="this.remove()"><h1>Welcome</h1>' +
       '<p class="lede">A simple lifting log. Faded numbers show last session, and one tap confirms a set.</p></header>' +
       '<section class="card"><h2 class="card-title">Good to know</h2><ul class="ideas">' +
-      '<li><strong>No account.</strong> Your workouts are saved on this phone and nowhere else.</li>' +
-      '<li><strong>Export a backup now and then</strong> from Progress. It’s the only way to keep a copy or move to a new phone.</li>' +
-      '<li><strong>Works without signal</strong> once it has loaded.</li></ul></section>' +
+      '<li><strong>Backed up to your account.</strong> Only you can see your workouts, and signing in on a new phone brings them back.</li>' +
+      '<li><strong>Works without signal.</strong> Log as normal; changes back up when you’re online again.</li></ul></section>' +
       (standalone ? '' : '<section class="card"><h2 class="card-title">Put it on your home screen</h2>' +
         '<p class="small">On iPhone, open this page in Safari, tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>. Always open it from that icon: its workouts are kept separately from the Safari tab, and are less likely to be cleared.</p></section>') +
       '<section class="card"><h2 class="card-title">Your setup</h2>' +
@@ -1432,6 +1490,28 @@
       document.querySelectorAll('.vol-col').forEach(function (c) { c.classList.toggle('picked', c === el); });
     },
     'greet-yes': function () { V.greeted = true; render(); },
+    'sign-in': function () {
+      if (!navigator.onLine) { toast('You’re offline. Connect to sign in.', 'warn'); return; }
+      CLOUD.signIn().catch(function (e) { toast(esc(e.message || 'Sign-in didn’t start. Try again.'), 'warn', 3500); });
+    },
+    'sync-now': function () {
+      if (!navigator.onLine) { toast('You’re offline. Changes back up when you reconnect.'); return; }
+      CLOUD.syncNow().then(function () {
+        var st = CLOUD.status().state;
+        toast(st === 'synced' ? 'Backed up' : esc(syncText()), st === 'synced' ? '' : 'warn', 3000);
+      });
+    },
+    'sign-out': function () {
+      var n = CLOUD.pending();
+      var text = n
+        ? n + (n === 1 ? ' change hasn’t' : ' changes haven’t') + ' been backed up yet and will be lost. Connect to the internet and tap Back up now first.'
+        : 'Your workouts are backed up and come back when you sign in again. This phone’s copy will be removed.';
+      confirmBox('Sign out?', text, 'Sign out', n > 0).then(function (ok) {
+        if (!ok) return;
+        V.screen = null; V.tab = 'home'; V.rest = null; V.edit = null; V.picker = null; V.greeted = true;
+        CLOUD.signOut().then(render);
+      });
+    },
     'setup-done': function () { S.settings.setupDone = true; V.tab = 'home'; commit(); },
     'fitbod-pick': function () { var f = document.getElementById('fitbod-file'); if (f) { f.value = ''; f.click(); } },
     'import-undo': function (el) { undoImport(el.dataset.id); },
@@ -1460,7 +1540,7 @@
     'export': exportBackup,
     'import': function () { var f = document.getElementById('import-file'); if (f) { f.value = ''; f.click(); } },
     'erase-all': function () {
-      confirmBox('Erase everything?', 'All workouts, saved workouts and settings on this device will be deleted. Export a backup first if you might want them.', 'Erase all', true).then(function (ok) {
+      confirmBox('Erase everything?', 'All workouts, saved workouts and settings will be deleted from this phone and from your account backup. Export a backup file first if you might want them.', 'Erase all', true).then(function (ok) {
         if (!ok) return;
         S = ST.defaults(); V.screen = null; V.tab = 'home'; V.rest = null; V.edit = null; commit();
       });
@@ -1551,6 +1631,16 @@
 
   // ---------- start-up ----------
   function boot() {
+    CLOUD.init({
+      getState: function () { return S; },
+      setState: function (next) { S = next; ST.save(S); },
+      onData: function () {
+        ST.save(S);
+        // Don't redraw under someone mid-entry; the new data shows on the next redraw.
+        if (V.screen !== 'workout' && V.screen !== 'editWorkout' && V.screen !== 'template' && !V.picker && !V.modal) render();
+      },
+      onStatus: showSyncStatus
+    });
     render();
     var splash = document.getElementById('splash');
     var t0 = window.__prfStart || Date.now();

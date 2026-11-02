@@ -25,6 +25,23 @@ create table if not exists public.workouts (
 
 create index if not exists workouts_user_updated on public.workouts (user_id, updated_at);
 
+-- The server stamps updated_at on every write, so phones with wrong clocks can't confuse syncing.
+create or replace function public.prf_touch_updated_at() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  new.updated_at := clock_timestamp();
+  return new;
+end;
+$$;
+
+drop trigger if exists profiles_touch on public.profiles;
+create trigger profiles_touch before insert or update on public.profiles
+  for each row execute function public.prf_touch_updated_at();
+
+drop trigger if exists workouts_touch on public.workouts;
+create trigger workouts_touch before insert or update on public.workouts
+  for each row execute function public.prf_touch_updated_at();
+
 alter table public.profiles enable row level security;
 alter table public.workouts enable row level security;
 

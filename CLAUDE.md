@@ -8,9 +8,10 @@ Philosophy: **Make logging effortless. Make progress obvious. Keep the lifter in
 
 - Code: this folder, `C:\PR FORGE 2`. Plain HTML/CSS/JS, no build step, no dependencies.
   - `index.html`, `css/app.css`
-  - `js/units.js` (lb/kg), `js/metrics.js` (volume, e1RM, PRs, trends, hints), `js/store.js` (localStorage + backup; unknown fields are dropped on load, so new saved fields must be added there), `js/plates.js` (plate calculator), `js/importers.js` (Fitbod CSV), `js/exercises.js` (built-in list and logging types), `js/app.js` (all UI)
+  - `js/units.js` (lb/kg), `js/metrics.js` (volume, e1RM, PRs, trends, hints), `js/store.js` (localStorage + backup; unknown fields are dropped on load, so new saved fields must be added there; settings, customs and templates also go through `sync.profileOf`), `js/sync.js` (cloud sync rules, pure), `js/cloud.js` (Google sign-in via Supabase, network, sync timing), `js/vendor/supabase.js` (supabase-js 2.118.0 UMD, MIT), `js/plates.js` (plate calculator), `js/importers.js` (Fitbod CSV), `js/exercises.js` (built-in list and logging types), `js/app.js` (all UI)
   - `sw.js` (offline cache; bump `CACHE` on every release), `manifest.webmanifest`
-  - `tests/logic.test.js`: run `node --test` in this folder (Node 20+). 27 tests, all passing as of 1 Nov 2026.
+  - `tests/logic.test.js`, `tests/sync.test.js`: run `node --test` in this folder (Node 20+). 35 tests, all passing as of 2 Nov 2026.
+  - `supabase/schema.sql`: database tables, row level security and grants; run in Supabase → SQL Editor. Project URL `https://pvtcqdtqycihlontmirl.supabase.co`; the publishable key is in `js/cloud.js` (public by design). Never commit the secret key, database password or Google client secret.
 - Requirements doc (PRD): https://claude.ai/artifact/BRwXUQBAEp5rhWqbmuTFsv
 - Redesign canvas ("Forge Scoreboard"): https://claude.ai/artifact/AXMdMVNRanCEWaTCV2Czys
   - Copies of the screen designs are in `design/` (`*.dc.html`). They are design mockups, not app code: read them for layout, type, spacing, and colours.
@@ -26,7 +27,8 @@ Philosophy: **Make logging effortless. Make progress obvious. Keep the lifter in
 - Exercise library: much bigger. Uses free-exercise-db (800+), factual fields only (name, muscles, equipment), no images or instructions.
 - Notes / RPE: probably yes, optional (off until enabled). Not confirmed.
 - Old workouts: from **Fitbod**. The CSV import is built from the column layout in a public converter, not yet checked against a real export from Kevin. The `multiplier` column is ignored because its meaning is unconfirmed.
-- One phone is enough: no server, accounts, or sync. Backups (JSON export/restore) move data.
+- Changed 2 Nov 2026 (Kevin): **Google sign-in is required**, and data is backed up to the cloud per person (Supabase Postgres + Supabase Auth with Google; site stays on GitHub Pages). The phone's copy stays the working copy so logging works offline; sync runs when online. Backup files still work.
+- First open shows a one-time joke question ("Are you a sexy ass bitch?", both buttons say yes), then sign-in, then setup. Kevin's choice; keep it.
 - Feature priorities (Must): log sets, saved workouts, last-time hints, history, lb/kg, offline, backup/restore, edit past workouts, custom exercises, per-arm/per-leg, PR banner, lift trends, personal records, plate calculator. Should: warm-ups, rest timer (make it optional), Today home, splash. Later: imports, notes/RPE, body weight, themes. Cut: PR share card.
 
 ## Product rules that must hold
@@ -49,6 +51,7 @@ Philosophy: **Make logging effortless. Make progress obvious. Keep the lifter in
 
 ## Next work (in order)
 
+0. In progress (2 Nov 2026, app 1.5.0): Google sign-in + cloud sync. Still to confirm on a real phone: Google sign-in completes (especially from the iPhone home-screen app, where the sign-in may finish in Safari instead), first upload, second-device restore. If home-screen sign-in fails, add an emailed one-time-code sign-in as a fallback.
 1. Done (1 Nov 2026, app 1.1.0): Forge Scoreboard applied to all screens. Not built from the mockups: Progress time-range toggle (8 wk/6 mo/All), "usual 3 sessions" goal line. Barlow is bundled in `fonts/` (latin subset, Fontsource 5.3.0, OFL) and precached by `sw.js`.
 2. Done (1 Nov 2026, app 1.4.0): plate calculator on the active set, barbell lifts only (lb plates 45/35/25/10/5/2.5, kg 25/20/15/10/5/2.5/1.25; bar weight in settings; fewest plates, so 205 lb is 45 + 35 per side).
 3. Done (1 Nov 2026, app 1.4.0): edit a past workout from History or the summary.

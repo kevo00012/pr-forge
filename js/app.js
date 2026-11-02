@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers;
-  var VERSION = '1.4.1';
+  var VERSION = '1.4.2';
 
   var S = ST.load();
   var V = {
@@ -24,7 +24,8 @@
     prMoment: null,       // the full-screen PR panel being shown (see buildPrMoment)
     focusEntry: null,     // exercise opened by tap; otherwise the first with sets left
     summary: null,        // id of the workout just finished (shows "Workout saved")
-    modal: null           // { resolve }
+    modal: null,          // { resolve }
+    greeted: false        // answered the first-open question (this visit only; setup itself is saved)
   };
   var app = document.getElementById('app');
   var lastViewKey = '';
@@ -275,14 +276,14 @@
 
   // ---------- render ----------
   function viewKey() {
-    if (needsSetup()) return 'setup';
+    if (needsSetup()) return V.greeted ? 'setup' : 'greet';
     return V.screen ? V.screen + ':' + (V.screen === 'lift' ? V.liftId : V.historyId || '') : 'tab:' + V.tab;
   }
   function needsSetup() { return !S.settings.setupDone && !S.active; }
 
   function render() {
     var body;
-    if (needsSetup()) body = viewSetup();
+    if (needsSetup()) body = V.greeted ? viewSetup() : viewGreet();
     else if (V.screen === 'workout' && S.active) body = viewWorkout();
     else if (V.screen === 'template' && V.tplDraft) body = viewTemplateEditor();
     else if (V.screen === 'editWorkout' && V.edit) body = viewEditWorkout();
@@ -741,6 +742,13 @@
   }
 
   // ----- First open -----
+  // A one-time joke question before setup. Both answers are yes.
+  function viewGreet() {
+    return '<section class="greet"><img class="setup-logo" src="icons/logo.png" alt="PR Forge logo" onerror="this.remove()">' +
+      '<h1 class="big">Are you a sexy ass biiitch?</h1>' +
+      '<div class="foot-actions"><button class="btn primary block" data-act="greet-yes">Hell yes</button>' +
+      '<button class="btn primary block" data-act="greet-yes">Obviously</button></div></section>';
+  }
   function viewSetup() {
     var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
     var rest = S.settings.restSeconds;
@@ -1423,6 +1431,7 @@
       if (read) read.textContent = el.dataset.read;
       document.querySelectorAll('.vol-col').forEach(function (c) { c.classList.toggle('picked', c === el); });
     },
+    'greet-yes': function () { V.greeted = true; render(); },
     'setup-done': function () { S.settings.setupDone = true; V.tab = 'home'; commit(); },
     'fitbod-pick': function () { var f = document.getElementById('fitbod-file'); if (f) { f.value = ''; f.click(); } },
     'import-undo': function (el) { undoImport(el.dataset.id); },

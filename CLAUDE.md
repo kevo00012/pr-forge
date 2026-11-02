@@ -22,7 +22,7 @@ Philosophy: **Make logging effortless. Make progress obvious. Keep the lifter in
 
 - Friends will use it too; each person's data stays on their own phone. Setup must explain itself.
 - The current build is the starting point; trim and extend it, don't rebuild.
-- Keep the branded splash (≥ 3 s). Kevin supplies the logo; never invent one.
+- Keep the branded splash (≥ 3 s). The logo is Kevin's artwork (original at `C:\PR FORGE\assets\pr-forge-logo.png`; sized copies in `icons/`). Never invent or redraw one.
 - Exercise library: much bigger. Uses free-exercise-db (800+), factual fields only (name, muscles, equipment), no images or instructions.
 - Notes / RPE: probably yes, optional (off until enabled). Not confirmed.
 - Old workouts: from **Fitbod**. Build a Fitbod CSV import against a real export Kevin provides.

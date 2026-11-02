@@ -10,7 +10,7 @@ Live at: **https://kevo00012.github.io/pr-forge/**
 
 - **Today:** this week's day strip, an "Up next" workout (the saved workout you've gone longest without doing), and highlights (this week's volume, vs last week, PRs this week). It never shows -100%.
 - **Workouts:** saved workouts (exercises + number of sets). Starting one fills in last session's numbers as faded hints. Hints only count once you confirm the set.
-- **Active workout:** one exercise open at a time with its current set outlined in orange; tap any other exercise to open it. Weight / reps / ✓ for each set. Tap a set number to mark it as a warm-up. Per-arm and per-leg exercises show "Per arm"/"Per leg" and are never double-counted. You get a rest timer, a full-screen PR panel when a working set beats your previous best estimated 1RM (never on the first session of a lift or on warm-ups), and you can switch tabs while a workout is running. Finishing shows a "Workout saved" summary.
+- **Active workout:** one exercise open at a time with its current set outlined in orange; tap any other exercise to open it. An open exercise can be swapped for another or moved up or down. Weight / reps / ✓ for each set. Tap a set number to mark it as a warm-up. Per-arm and per-leg exercises show "Per arm"/"Per leg" and are never double-counted. You get a rest timer, a full-screen PR panel when a working set beats your previous best estimated 1RM (never on the first session of a lift or on warm-ups), and you can switch tabs while a workout is running. Finishing shows a "Workout saved" summary.
 - **Progress:** per-lift trend rows (Progressing / Holding / Stalled / Building data) with a plain explanation of how they're worked out, personal records, lb/kg, rest timer length, backup export/restore, and erase.
 - **History:** finished workouts by month, with details, "Save as a workout", and delete.
 - 895 built-in exercises (common ones listed first) plus your own custom ones. Works offline once it has loaded over the internet.
@@ -45,11 +45,11 @@ Upload the changed files to the repo again (same "Add file → Upload files" but
 
 ## Logo
 
-The splash screen shows `icons/logo.png` if it exists, otherwise just the text "PR FORGE". To use your logo, add these files to the `icons` folder:
+The `icons` folder holds the logo, cropped to its badge and resized from the original artwork:
 
-- `logo.png`: the splash logo (square, transparent or black background)
+- `logo.png`: the splash logo (if it can't load, the splash shows the text "PR FORGE")
 - `apple-touch-icon.png`: 180×180, the iPhone home-screen icon
-- `icon-192.png` and `icon-512.png`: Android/desktop install icons
+- `icon-192.png` and `icon-512.png`: Android/desktop install icons and the browser tab icon
 
 ## For developers
 

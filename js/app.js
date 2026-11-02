@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises;
-  var VERSION = '1.2.0';
+  var VERSION = '1.3.0';
 
   var S = ST.load();
   var V = {
@@ -354,7 +354,8 @@
   function viewWorkout() {
     var a = S.active;
     var current = currentEntry();
-    var nextShown = false, passed = false;
+    var notStarted = function (e) { return e !== current && e.sets.every(function (s) { return !s.done; }); };
+    var nextEntry = a.exercises.slice(a.exercises.indexOf(current) + 1).filter(notStarted)[0] || a.exercises.filter(notStarted)[0];
     var total = 0, confirmed = 0;
     a.exercises.forEach(function (e) {
       e.sets.forEach(function (s) { total++; if (s.done) confirmed++; });
@@ -365,14 +366,12 @@
       var doneSets = entry.sets.filter(function (s) { return s.done; }).length;
       if (entry !== current) {
         var allDone = doneSets === entry.sets.length;
-        var label = allDone ? icon('check') + 'Done' : doneSets ? doneSets + ' of ' + entry.sets.length + ' sets' : 'Later';
-        if (!allDone && !doneSets && !nextShown && (passed || !current)) { label = 'Next'; nextShown = true; }
+        var label = allDone ? icon('check') + 'Done' : doneSets ? doneSets + ' of ' + entry.sets.length + ' sets' : entry === nextEntry ? 'Next' : 'Later';
         return '<button class="ex-row' + (allDone ? ' done' : '') + '" data-act="ex-focus" data-e="' + entry.id + '">' +
           '<span class="ex-row-text"><span class="ex-row-label">' + label + '</span><span class="ex-row-name">' + esc(ex.name) + '</span></span>' +
           '<span class="ex-row-plan">' + (allDone ? doneSets + ' set' + (doneSets === 1 ? '' : 's') : planText(entry.exerciseId, entry.sets.length, a.unit, a.id)) +
           (side ? '<small>' + side.toLowerCase() + '</small>' : '') + '</span></button>';
       }
-      passed = true;
       var last = M.lastSessionFor(S.workouts, entry.exerciseId, a.id);
       var activeSet = entry.sets.filter(function (s) { return !s.done; })[0];
       var lastText = lastTimeText(last, a.unit);
@@ -399,7 +398,11 @@
         '<div class="set-row head"><span>Set</span><span>' + a.unit + '</span><span></span><span>Reps' + (side ? ' <span class="head-side">' + side.toLowerCase() + '</span>' : '') + '</span><span></span></div>' +
         rows +
         '<div class="ex-actions"><button class="btn ghost sm" data-act="set-add" data-e="' + entry.id + '">' + icon('plus', 'sm') + 'Add set</button>' +
-        (entry.sets.length > 1 ? '<button class="btn ghost sm" data-act="set-remove" data-e="' + entry.id + '">Remove last set</button>' : '') + '</div></section>';
+        (entry.sets.length > 1 ? '<button class="btn ghost sm" data-act="set-remove" data-e="' + entry.id + '">Remove last set</button>' : '') +
+        '<button class="btn ghost sm" data-act="ex-swap" data-e="' + entry.id + '">Swap</button>' +
+        '<button class="icon-btn boxed" data-act="ex-move" data-e="' + entry.id + '" data-d="-1" aria-label="Move ' + esc(ex.name) + ' up"' + (a.exercises[0] === entry ? ' disabled' : '') + '>' + icon('up', 'sm') + '</button>' +
+        '<button class="icon-btn boxed" data-act="ex-move" data-e="' + entry.id + '" data-d="1" aria-label="Move ' + esc(ex.name) + ' down"' + (a.exercises[a.exercises.length - 1] === entry ? ' disabled' : '') + '>' + icon('down', 'sm') + '</button>' +
+        '</div></section>';
     }).join('');
 
     if (!cards) cards = '<section class="card empty"><p>No exercises yet.</p><p class="muted small">Add exercises to start logging sets.</p></section>';
@@ -652,6 +655,9 @@
     return rows || '<p class="muted small center pad">No matches. You can create it as a custom exercise.</p>';
   }
   function pickerFooter() {
+    if (V.picker.target === 'swap') {
+      return '<button class="btn ghost" data-act="picker-custom">Create custom</button><button class="btn ghost" data-act="picker-close">Cancel</button>';
+    }
     var n = Object.keys(V.picker.selected).length;
     return '<button class="btn ghost" data-act="picker-custom">Create custom</button>' +
       '<button class="btn primary" data-act="picker-confirm"' + (n ? '' : ' disabled') + '>' + (n ? 'Add ' + n : 'Add') + '</button>';
@@ -662,8 +668,9 @@
       var on = (m === 'All' && !p.muscle) || m === p.muscle;
       return '<button class="chip' + (on ? ' on' : '') + '" data-act="picker-muscle" data-v="' + esc(m) + '">' + esc(m) + '</button>';
     }).join('');
-    return '<div class="sheet-wrap"><div class="backdrop" data-act="picker-close"></div><div class="sheet" role="dialog" aria-label="Add exercises">' +
-      '<div class="sheet-head"><h2>Add exercises</h2><button class="icon-btn" data-act="picker-close" aria-label="Close">' + icon('close') + '</button></div>' +
+    var title = p.target === 'swap' ? 'Swap exercise' : 'Add exercises';
+    return '<div class="sheet-wrap"><div class="backdrop" data-act="picker-close"></div><div class="sheet" role="dialog" aria-label="' + title + '">' +
+      '<div class="sheet-head"><h2>' + title + '</h2><button class="icon-btn" data-act="picker-close" aria-label="Close">' + icon('close') + '</button></div>' +
       '<input class="search" data-field="picker-q" type="search" placeholder="Search exercises" value="' + esc(p.q) + '" autocomplete="off">' +
       '<div class="chips scroll">' + chips + '</div>' +
       '<div class="pick-list" id="pick-list">' + pickerListHtml() + '</div>' +
@@ -704,6 +711,22 @@
     return n;
   }
   function newSet() { return { id: uid(), weight: null, reps: null, done: false, warmup: false }; }
+  /** Replaces the lift in place: same position and number of sets, values cleared so old numbers can't carry over. */
+  function swapEntry(entryId, exerciseId) {
+    var entry = findEntry(entryId);
+    if (!entry) return;
+    if (entry.exerciseId !== exerciseId) {
+      if (S.active.exercises.some(function (e) { return e.exerciseId === exerciseId; })) {
+        toast(esc(exById(exerciseId).name) + ' is already in this workout', 'warn');
+        return;
+      }
+      entry.exerciseId = exerciseId;
+      entry.sets = entry.sets.map(newSet);
+    }
+    V.focusEntry = entry.id;
+    V.picker = null;
+    commit();
+  }
   /** The open exercise card: the one tapped, otherwise the first with sets left (null when all are done). */
   function currentEntry() {
     var list = S.active.exercises;
@@ -872,6 +895,21 @@
       if (entry.sets.some(function (s) { return s.done; })) confirmBox('Remove ' + name + '?', 'Its confirmed sets will be removed from this workout.', 'Remove', true).then(function (ok) { if (ok) go(); });
       else go();
     },
+    'ex-move': function (el) {
+      var list = S.active.exercises;
+      var i = list.indexOf(findEntry(el.dataset.e)), j = i + (+el.dataset.d);
+      if (i < 0 || j < 0 || j >= list.length) return;
+      var t = list[i]; list[i] = list[j]; list[j] = t;
+      V.focusEntry = el.dataset.e; // keep this card open at its new position
+      commit();
+    },
+    'ex-swap': function (el) {
+      var entry = findEntry(el.dataset.e); if (!entry) return;
+      var open = function () { V.picker = { target: 'swap', entryId: entry.id, q: '', muscle: '', selected: {} }; render(); };
+      if (entry.sets.some(function (s) { return s.done; })) {
+        confirmBox('Swap ' + esc(exById(entry.exerciseId).name) + '?', 'Its confirmed sets will be cleared from this workout.', 'Choose exercise', true).then(function (ok) { if (ok) open(); });
+      } else open();
+    },
     'add-exercise': function () { V.picker = { target: 'workout', q: '', muscle: '', selected: {} }; render(); },
     'finish-workout': finishWorkout,
     'discard-workout': function () {
@@ -932,6 +970,7 @@
     },
     'picker-toggle': function (el) {
       var id = el.dataset.id;
+      if (V.picker.target === 'swap') { swapEntry(V.picker.entryId, id); return; }
       if (V.picker.selected[id]) delete V.picker.selected[id]; else V.picker.selected[id] = Date.now() + Object.keys(V.picker.selected).length;
       refreshPicker();
     },
@@ -956,7 +995,8 @@
       S.customExercises.push(ex);
       save();
       closeModal();
-      if (V.picker) { V.picker.selected[ex.id] = Date.now(); V.picker.q = ''; render(); }
+      if (V.picker && V.picker.target === 'swap') swapEntry(V.picker.entryId, ex.id);
+      else if (V.picker) { V.picker.selected[ex.id] = Date.now(); V.picker.q = ''; render(); }
       toast('Added “' + esc(ex.name) + '”');
     },
     'modal-ok': function () { closeModal(true); },

@@ -764,7 +764,8 @@
         (hasData ? '<p class="small">The workouts already on this phone will be backed up when you sign in.</p>' : '') +
         (err ? '<p class="small warn-text">Sign-in didn’t work: ' + esc(err) + '. Try again.</p>' : '') +
         (navigator.onLine ? '' : '<p class="small warn-text">You’re offline. Signing in needs a connection the first time; after that the app works without one.</p>') +
-        '<div class="foot-actions"><button class="btn primary block" data-act="sign-in">Continue with Google</button></div>') +
+        '<div class="foot-actions"><button class="btn primary block" data-act="sign-in">Continue with Google</button>' +
+        '<a class="muted small center privacy-link" href="privacy.html">Privacy: what’s stored and how to delete it</a></div>') +
       '</section>';
   }
 

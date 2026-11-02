@@ -1,0 +1,65 @@
+# PR Forge (web) — project context for Claude Code
+
+A free, phone-first strength-training log that runs in the browser. Restarted from scratch on 1 Nov 2026 as a **web app** (no App Store, no native iOS). The older Expo app lives in `C:\PR FORGE` and must not be touched or deleted.
+
+Philosophy: **Make logging effortless. Make progress obvious. Keep the lifter in control.**
+
+## Where things are
+
+- Code: this folder, `C:\PR FORGE 2`. Plain HTML/CSS/JS, no build step, no dependencies.
+  - `index.html`, `css/app.css`
+  - `js/units.js` (lb/kg), `js/metrics.js` (volume, e1RM, PRs, trends, hints), `js/store.js` (localStorage + backup), `js/exercises.js` (built-in list), `js/app.js` (all UI)
+  - `sw.js` (offline cache; bump `CACHE` on every release), `manifest.webmanifest`
+  - `tests/logic.test.js`: run `node --test` in this folder (Node 20+). 14 tests, all passing as of 1 Nov 2026.
+- Requirements doc (PRD): https://claude.ai/artifact/BRwXUQBAEp5rhWqbmuTFsv
+- Redesign canvas ("Forge Scoreboard"): https://claude.ai/artifact/AXMdMVNRanCEWaTCV2Czys
+  - Copies of the screen designs are in `design/` (`*.dc.html`). They are design mockups, not app code: read them for layout, type, spacing, and colours.
+  - `tools/serve.js`: local dev server (`node tools/serve.js` → http://localhost:8000/; `pr-forge` in `.claude/launch.json`).
+- Repo: https://github.com/kevo00012/pr-forge (public, branch `main`). Commits use the GitHub no-reply email, set in this repo's git config. Never commit backups or Fitbod exports; `.gitignore` blocks them.
+- Hosting plan: GitHub Pages → https://kevo00012.github.io/pr-forge/ (Pages not switched on yet; task 7).
+
+## Decisions (from the PRD, answered by Kevin)
+
+- Friends will use it too; each person's data stays on their own phone. Setup must explain itself.
+- The current build is the starting point; trim and extend it, don't rebuild.
+- Keep the branded splash (≥ 3 s). Kevin supplies the logo; never invent one.
+- Exercise library: much bigger. Use the free-exercise-db `dist/exercises.json` (800+), factual fields only (name, muscles, equipment), no images or instructions. Kevin needs to download it into this folder.
+- Notes / RPE: probably yes, optional (off until enabled). Not confirmed.
+- Old workouts: from **Fitbod**. Build a Fitbod CSV import against a real export Kevin provides.
+- One phone is enough: no server, accounts, or sync. Backups (JSON export/restore) move data.
+- Feature priorities (Must): log sets, saved workouts, last-time hints, history, lb/kg, offline, backup/restore, edit past workouts, custom exercises, per-arm/per-leg, PR banner, lift trends, personal records, plate calculator. Should: warm-ups, rest timer (make it optional), Today home, splash. Later: imports, notes/RPE, body weight, themes. Cut: PR share card.
+
+## Product rules that must hold
+
+- Per-arm / per-leg exercises show "Per arm"/"Per leg" and never double-count volume.
+- Faded hints from last session only count once a set is confirmed; working-set hints come from working sets, warm-ups from warm-ups.
+- No PR on a lift's first-ever session, on warm-ups, or on imported/edited past data.
+- Weekly comparison never shows -100%.
+- Trends are explained in plain words (Progressing / Holding / Stalled / Building data), never a fake-scientific score.
+- Layout must work at 375 px and 390 px widths.
+
+## Design direction ("Forge Scoreboard")
+
+- Ground `#0D0C0B`, surface `#171513`, raised `#211E1B`, lines `#2E2A26`, text `#F6F3EF`, secondary `#A8A098`, accent `#FF7A32`, text on accent `#1A0B03`, stalled amber `#F5B94A` on `#2A2213`.
+- Type: Barlow Condensed (700–800, uppercase) for headings and all numbers; Barlow for body. Tabular numerals.
+- Orange only for "act" or "win" (primary button, confirmed set, current set, PRs).
+- Logging screen: active set outlined in orange, ghost hints in empty inputs, plate calculator under the active set, rest timer dock above the tab bar.
+- PR moment: full-width orange panel, huge weight × reps, e1RM and gain, last-8-sessions bars.
+- Touch targets ≥ 44 px.
+
+## Next work (in order)
+
+1. Done (1 Nov 2026, app 1.1.0): Forge Scoreboard applied to all screens. Not built from the mockups: Progress time-range toggle (8 wk/6 mo/All), "usual 3 sessions" goal line. Barlow loads from Google Fonts and is cached by `sw.js`.
+2. Plate calculator on the active set (lb: 45 lb bar, plates 45/35/25/10/5/2.5; kg equivalents).
+3. Edit a past workout from History (no PR banners on edits).
+4. Bundle free-exercise-db once `exercises.json` is in this folder.
+5. Fitbod CSV import once Kevin adds an export file.
+6. First-open setup that explains itself for friends.
+7. Publish to GitHub Pages.
+
+## How Kevin wants code work done
+
+- Never claim code was installed, run, or tested unless it was; say what's unverified.
+- Deliver complete updated files or a reliable patch, not snippets.
+- Audit before rewriting, keep existing features working, make the smallest coherent change, explain tradeoffs, and ask only when a missing decision affects correctness.
+- End each delivery with: summary of changes, files changed, dependency changes, migrations, test results and known limitations, exact run instructions, prioritized remaining work.

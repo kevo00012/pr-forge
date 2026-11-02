@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PR Forge · Logging a set</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&amp;family=Barlow:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0D0C0B}
+a{color:#FF7A32}a:hover{color:#FF9A5E}
+input::placeholder{color:#7A726B;opacity:1}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: #0D0C0B; color: #F6F3EF; font-family: 'Barlow', 'Helvetica Neue', Arial, sans-serif; box-sizing: border-box">
+
+  <header style="padding: 56px 16px 12px; display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 8px; border-bottom: 1px solid #2E2A26">
+    <a href="Main.dc.html" aria-label="Hide workout" style="width: 44px; height: 44px; border-radius: 12px; border: 1px solid #2E2A26; display: flex; align-items: center; justify-content: center; color: #F6F3EF">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+    </a>
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 0">
+      <span style="font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 800; font-size: 20px; letter-spacing: 0.06em; text-transform: uppercase">Push Day</span>
+      <span style="font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 600; font-size: 15px; color: #A8A098; font-variant-numeric: tabular-nums">23:14</span>
+    </div>
+    <a href="Summary.dc.html" style="height: 44px; padding: 0 16px; border-radius: 12px; border: 1.5px solid {{accent}}; color: {{accent}}; display: flex; align-items: center; text-decoration: none; font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 800; font-size: 16px; letter-spacing: 0.08em; text-transform: uppercase">Finish</a>
+  </header>
+
+  <div style="padding: 12px 16px 0; display: flex; flex-direction: column; gap: 6px">
+    <div style="display: flex; justify-content: space-between; font-size: 13px; color: #A8A098"><span>3 of 8 sets</span><span>Bench · Row · Split squat</span></div>
+    <div style="height: 4px; border-radius: 2px; background: #211E1B; overflow: hidden"><div style="width: 37.5%; height: 4px; background: {{accent}}"></div></div>
+  </div>
+
+  <section aria-label="Bench Press" style="margin: 14px 16px 0; background: #171513; border: 1px solid #2E2A26; border-radius: 20px; padding: 16px; display: flex; flex-direction: column; gap: 6px">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start">
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <h2 style="margin: 0; font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 800; font-size: 28px; line-height: 1; text-transform: uppercase">Bench Press</h2>
+        <span style="font-size: 13px; color: #A8A098">Barbell · Last time 3 × 5 @ 195 lb</span>
+      </div>
+      <span style="font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 700; font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; color: #A8A098">Best 239</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 36px minmax(0, 1fr) 20px minmax(0, 1fr) 52px; align-items: center; gap: 8px; padding: 10px 0 2px; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #A8A098">
+      <span>Set</span><span>lb</span><span></span><span>Reps</span><span></span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 36px minmax(0, 1fr) 20px minmax(0, 1fr) 52px; align-items: center; gap: 8px; height: 52px; border-top: 1px solid #2E2A26">
+      <span style="width: 32px; height: 32px; border-radius: 8px; background: #2A2213; color: #F5B94A; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px" aria-label="Warm-up set">W</span>
+      <span style="font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 600; font-size: 26px; color: #A8A098; font-variant-numeric: tabular-nums">95</span>
+      <span style="color: #6F6861; font-size: 16px">×</span>
+      <span style="font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 600; font-size: 26px; color: #A8A098; font-variant-numeric: tabular-nums">10</span>
+      <button type="button" aria-label="Warm-up set confirmed" aria-pressed="true" style="width: 52px; height: 44px; border-radius: 12px; border: 1px solid #2E2A26; background: #211E1B; color: #A8A098; display: flex; align-items: center; justify-content: center"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5 9.5 17 19 7.5"/></svg></button>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 36px minmax(0, 1fr) 20px minmax(0, 1fr) 52px; align-items: center; gap: 8px; height: 52px; border-top: 1px solid #2E2A26">
+      <span style="width: 32px; height: 32px; border-radius: 8px; background: #211E1B; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px">1</span>
+      <span style="font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 700; font-size: 26px; font-variant-numeric: tabular-nums">195</span>
+      <span style="color: #6F6861; font-size: 16px">×</span>
+      <span style="font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 700; font-size: 26px; font-variant-numeric: tabular-nums">5</span>
+      <button type="button" aria-label="Set 1 confirmed" aria-pressed="true" style="width: 52px; height: 44px; border-radius: 12px; border: 0; background: {{accent}}; color: #1A0B03; display: flex; align-items: center; justify-content: center"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5 9.5 17 19 7.5"/></svg></button>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 36px minmax(0, 1fr) 20px minmax(0, 1fr) 52px; align-items: center; gap: 8px; height: 52px; border-top: 1px solid #2E2A26">
+      <span style="width: 32px; height: 32px; border-radius: 8px; background: #211E1B; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px">2</span>
+      <span style="display: flex; align-items: baseline; gap: 8px"><span style="font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 700; font-size: 26px; font-variant-numeric: tabular-nums">205</span><span style="font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 800; font-size: 11px; letter-spacing: 0.12em; color: {{accent}}">PR</span></span>
+      <span style="color: #6F6861; font-size: 16px">×</span>
+      <span style="font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 700; font-size: 26px; font-variant-numeric: tabular-nums">5</span>
+      <button type="button" aria-label="Set 2 confirmed" aria-pressed="true" style="width: 52px; height: 44px; border-radius: 12px; border: 0; background: {{accent}}; color: #1A0B03; display: flex; align-items: center; justify-content: center"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5 9.5 17 19 7.5"/></svg></button>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 36px minmax(0, 1fr) 20px minmax(0, 1fr) 52px; align-items: center; gap: 8px; height: 60px; margin: 0 -8px; padding: 0 8px; border-radius: 14px; border: 1.5px solid {{accent}}; background: #1F1712">
+      <span style="width: 32px; height: 32px; border-radius: 8px; background: {{accent}}; color: #1A0B03; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 14px">3</span>
+      <label style="display: flex; flex-direction: column"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Weight, set 3, in pounds</span><input inputmode="decimal" placeholder="205" style="width: 100%; height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid #3A322B; background: #0D0C0B; color: #F6F3EF; text-align: center; font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 700; font-size: 26px"></label>
+      <span style="color: #6F6861; font-size: 16px">×</span>
+      <label style="display: flex; flex-direction: column"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Reps, set 3</span><input inputmode="numeric" placeholder="5" style="width: 100%; height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid #3A322B; background: #0D0C0B; color: #F6F3EF; text-align: center; font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 700; font-size: 26px"></label>
+      <a href="PR.dc.html" aria-label="Confirm set 3" style="width: 52px; height: 44px; border-radius: 12px; border: 1.5px solid {{accent}}; color: {{accent}}; display: flex; align-items: center; justify-content: center; box-sizing: border-box"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5 9.5 17 19 7.5"/></svg></a>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 8px; padding-top: 8px; flex-wrap: wrap">
+      <span style="font-size: 13px; color: #A8A098">Each side of a 45 lb bar</span>
+      <span style="display: flex; gap: 6px">
+        <span style="min-width: 36px; height: 28px; padding: 0 8px; box-sizing: border-box; border-radius: 6px; background: #F6F3EF; color: #0D0C0B; display: flex; align-items: center; justify-content: center; font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 800; font-size: 16px">45</span>
+        <span style="min-width: 36px; height: 28px; padding: 0 8px; box-sizing: border-box; border-radius: 6px; background: #D9D3CC; color: #0D0C0B; display: flex; align-items: center; justify-content: center; font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 800; font-size: 16px">25</span>
+        <span style="min-width: 36px; height: 28px; padding: 0 8px; box-sizing: border-box; border-radius: 6px; background: #A8A098; color: #0D0C0B; display: flex; align-items: center; justify-content: center; font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 800; font-size: 16px">10</span>
+      </span>
+    </div>
+  </section>
+
+  <section aria-label="Next exercise" style="margin: 12px 16px 0; padding: 14px 16px; border: 1px solid #2E2A26; border-radius: 16px; display: flex; justify-content: space-between; align-items: center">
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <span style="font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 700; font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: #A8A098">Next</span>
+      <span style="font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 700; font-size: 20px; text-transform: uppercase">Single-Arm Row</span>
+    </div>
+    <span style="font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 600; font-size: 18px; color: #D9D3CC; font-variant-numeric: tabular-nums">2 × 60 <span style="font-size: 13px; color: #A8A098">per arm</span></span>
+  </section>
+
+  <section aria-label="Rest timer" style="position: absolute; left: 12px; right: 12px; bottom: 96px; padding: 12px 12px 12px 16px; border-radius: 18px; background: #1C1916; border: 1px solid #3A322B; display: flex; align-items: center; gap: 12px">
+    <div style="flex: 1; display: flex; flex-direction: column; gap: 6px">
+      <div style="display: flex; align-items: baseline; gap: 8px">
+        <span style="font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 700; font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: #A8A098">Rest</span>
+        <span style="font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 800; font-size: 32px; line-height: 1; font-variant-numeric: tabular-nums">1:12</span>
+      </div>
+      <div style="height: 4px; border-radius: 2px; background: #2E2A26; overflow: hidden"><div style="width: 60%; height: 4px; background: {{accent}}"></div></div>
+    </div>
+    <button type="button" style="width: 52px; height: 44px; border-radius: 12px; border: 1px solid #3A322B; background: transparent; color: #F6F3EF; font: 700 15px 'Barlow', sans-serif">+30</button>
+    <button type="button" style="width: 60px; height: 44px; border-radius: 12px; border: 1px solid #3A322B; background: transparent; color: #F6F3EF; font: 700 15px 'Barlow', sans-serif">Skip</button>
+  </section>
+
+  <nav aria-label="Sections" style="position: absolute; left: 0; right: 0; bottom: 0; height: 84px; padding: 8px 12px 24px; box-sizing: border-box; background: #0D0C0B; border-top: 1px solid #2E2A26; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px">
+    <a href="Main.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #A8A098; text-decoration: none; font-size: 11px; font-weight: 600; letter-spacing: 0.04em">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 10.5 12 4l8.5 6.5V20H15v-6H9v6H3.5z"/></svg>Today</a>
+    <a href="Workout.dc.html" aria-current="page" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: {{accent}}; text-decoration: none; font-size: 11px; font-weight: 700; letter-spacing: 0.04em">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 6.5v11M17.5 6.5v11M3.5 9.5v5M20.5 9.5v5M6.5 12h11"/></svg>Workout</a>
+    <a href="Progress.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #A8A098; text-decoration: none; font-size: 11px; font-weight: 600; letter-spacing: 0.04em">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16M6 15.5l4-4.5 3.5 3L19 7"/></svg>Progress</a>
+    <a href="History.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #A8A098; text-decoration: none; font-size: 11px; font-weight: 600; letter-spacing: 0.04em">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>History</a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#FF7A32","options":["#FF7A32","#FF5A1F","#FFB020","#5AC8FA"]},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { accent: this.props.accent ?? '#FF7A32' };
+  }
+}
+</script>
+</body>
+</html>

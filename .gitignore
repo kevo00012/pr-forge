@@ -1,0 +1,16 @@
+# Personal training data: this repo is public, so these must never be committed
+pr-forge-backup-*.json
+*.csv
+
+# Local Claude Code settings
+.claude/settings.local.json
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PR Forge · Progress</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&amp;family=Barlow:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0D0C0B}
+a{color:#FF7A32}a:hover{color:#FF9A5E}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: #0D0C0B; color: #F6F3EF; font-family: 'Barlow', 'Helvetica Neue', Arial, sans-serif; box-sizing: border-box">
+
+  <main style="padding: 60px 20px 0; display: flex; flex-direction: column; gap: 16px">
+    <header style="display: flex; justify-content: space-between; align-items: flex-end">
+      <h1 style="margin: 0; font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 800; font-size: 46px; line-height: 0.95; text-transform: uppercase">Progress</h1>
+      <div role="group" aria-label="Time range" style="display: flex; padding: 3px; border-radius: 12px; background: #171513; border: 1px solid #2E2A26">
+        <button type="button" aria-pressed="true" style="height: 36px; padding: 0 12px; border-radius: 9px; border: 0; background: #F6F3EF; color: #0D0C0B; font: 700 14px 'Barlow', sans-serif">8 wk</button>
+        <button type="button" aria-pressed="false" style="height: 36px; padding: 0 12px; border-radius: 9px; border: 0; background: transparent; color: #A8A098; font: 600 14px 'Barlow', sans-serif">6 mo</button>
+        <button type="button" aria-pressed="false" style="height: 36px; padding: 0 12px; border-radius: 9px; border: 0; background: transparent; color: #A8A098; font: 600 14px 'Barlow', sans-serif">All</button>
+      </div>
+    </header>
+
+    <p style="margin: 0; font-size: 15px; line-height: 1.4; color: #D9D3CC">3 lifts this block: <strong style="color: {{accent}}">1 progressing</strong>, 1 holding, <strong style="color: #F5B94A">1 stalled</strong>.</p>
+
+    <article style="background: #171513; border: 1px solid #2E2A26; border-radius: 18px; padding: 16px; display: grid; grid-template-columns: minmax(0, 1fr) 112px; gap: 4px 12px; align-items: end">
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; align-items: center; gap: 8px">
+          <h2 style="margin: 0; font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 700; font-size: 20px; text-transform: uppercase">Bench Press</h2>
+          <span style="height: 22px; padding: 0 8px; border-radius: 11px; background: {{accent}}; color: #140802; display: flex; align-items: center; font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase">Progressing</span>
+        </div>
+        <span style="font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 800; font-size: 44px; line-height: 0.9; font-variant-numeric: tabular-nums">239<span style="font-size: 18px; font-weight: 600; color: #A8A098"> lb est. 1RM</span></span>
+        <span style="font-size: 13px; color: #A8A098">New best today</span>
+      </div>
+      <div role="img" aria-label="Bench trend, last 8 sessions, rising to a new best" style="height: 64px; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 3px; align-items: end">
+        <span style="height: 40%; border-radius: 2px; background: #3A342F"></span><span style="height: 55%; border-radius: 2px; background: #3A342F"></span><span style="height: 70%; border-radius: 2px; background: #3A342F"></span><span style="height: 70%; border-radius: 2px; background: #3A342F"></span><span style="height: 70%; border-radius: 2px; background: #3A342F"></span><span style="height: 70%; border-radius: 2px; background: #3A342F"></span><span style="height: 70%; border-radius: 2px; background: #3A342F"></span><span style="height: 100%; border-radius: 2px; background: {{accent}}"></span>
+      </div>
+    </article>
+
+    <article style="background: #171513; border: 1px solid #2E2A26; border-radius: 18px; padding: 16px; display: grid; grid-template-columns: minmax(0, 1fr) 112px; gap: 4px 12px; align-items: end">
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; align-items: center; gap: 8px">
+          <h2 style="margin: 0; font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 700; font-size: 20px; text-transform: uppercase">Back Squat</h2>
+          <span style="height: 22px; padding: 0 8px; border-radius: 11px; border: 1px solid #6F6861; color: #D9D3CC; box-sizing: border-box; display: flex; align-items: center; font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase">Holding</span>
+        </div>
+        <span style="font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 800; font-size: 44px; line-height: 0.9; font-variant-numeric: tabular-nums">286<span style="font-size: 18px; font-weight: 600; color: #A8A098"> lb est. 1RM</span></span>
+        <span style="font-size: 13px; color: #A8A098">No new best in 4 sessions</span>
+      </div>
+      <div role="img" aria-label="Squat trend, last 8 sessions, flat for the last 4" style="height: 64px; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 3px; align-items: end">
+        <span style="height: 50%; border-radius: 2px; background: #3A342F"></span><span style="height: 65%; border-radius: 2px; background: #3A342F"></span><span style="height: 85%; border-radius: 2px; background: #3A342F"></span><span style="height: 85%; border-radius: 2px; background: #3A342F"></span><span style="height: 85%; border-radius: 2px; background: #3A342F"></span><span style="height: 78%; border-radius: 2px; background: #3A342F"></span><span style="height: 85%; border-radius: 2px; background: #3A342F"></span><span style="height: 85%; border-radius: 2px; background: #D9D3CC"></span>
+      </div>
+    </article>
+
+    <article style="background: #171513; border: 1px solid #2E2A26; border-radius: 18px; padding: 16px; display: grid; grid-template-columns: minmax(0, 1fr) 112px; gap: 4px 12px; align-items: end">
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; align-items: center; gap: 8px">
+          <h2 style="margin: 0; font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 700; font-size: 20px; text-transform: uppercase">Single-Arm Row</h2>
+          <span style="height: 22px; padding: 0 8px; border-radius: 11px; background: #2A2213; color: #F5B94A; display: flex; align-items: center; font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase">Stalled</span>
+        </div>
+        <span style="font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 800; font-size: 44px; line-height: 0.9; font-variant-numeric: tabular-nums">80<span style="font-size: 18px; font-weight: 600; color: #A8A098"> lb est. 1RM</span></span>
+        <span style="font-size: 13px; color: #A8A098">No new best in 6 sessions</span>
+      </div>
+      <div role="img" aria-label="Row trend, last 8 sessions, flat" style="height: 64px; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 3px; align-items: end">
+        <span style="height: 75%; border-radius: 2px; background: #3A342F"></span><span style="height: 75%; border-radius: 2px; background: #3A342F"></span><span style="height: 75%; border-radius: 2px; background: #3A342F"></span><span style="height: 75%; border-radius: 2px; background: #3A342F"></span><span style="height: 75%; border-radius: 2px; background: #3A342F"></span><span style="height: 75%; border-radius: 2px; background: #3A342F"></span><span style="height: 75%; border-radius: 2px; background: #3A342F"></span><span style="height: 75%; border-radius: 2px; background: #F5B94A"></span>
+      </div>
+      <p style="grid-column: 1 / -1; margin: 10px 0 0; padding-top: 10px; border-top: 1px solid #2E2A26; font-size: 14px; line-height: 1.4; color: #F5D59A">Try: drop about 10% and build back up, or switch to sets of 12.</p>
+    </article>
+
+    <button type="button" style="align-self: flex-start; height: 44px; padding: 0; border: 0; background: transparent; color: #D9D3CC; font: 600 14px 'Barlow', sans-serif; text-decoration: underline; text-underline-offset: 4px">How trends are worked out</button>
+  </main>
+
+  <nav aria-label="Sections" style="position: absolute; left: 0; right: 0; bottom: 0; height: 84px; padding: 8px 12px 24px; box-sizing: border-box; background: #0D0C0B; border-top: 1px solid #2E2A26; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px">
+    <a href="Main.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #A8A098; text-decoration: none; font-size: 11px; font-weight: 600; letter-spacing: 0.04em">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 10.5 12 4l8.5 6.5V20H15v-6H9v6H3.5z"/></svg>Today</a>
+    <a href="Workout.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #A8A098; text-decoration: none; font-size: 11px; font-weight: 600; letter-spacing: 0.04em">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 6.5v11M17.5 6.5v11M3.5 9.5v5M20.5 9.5v5M6.5 12h11"/></svg>Workouts</a>
+    <a href="Progress.dc.html" aria-current="page" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: {{accent}}; text-decoration: none; font-size: 11px; font-weight: 700; letter-spacing: 0.04em">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16M6 15.5l4-4.5 3.5 3L19 7"/></svg>Progress</a>
+    <a href="History.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #A8A098; text-decoration: none; font-size: 11px; font-weight: 600; letter-spacing: 0.04em">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>History</a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#FF7A32","options":["#FF7A32","#FF5A1F","#FFB020","#5AC8FA"]},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { accent: this.props.accent ?? '#FF7A32' };
+  }
+}
+</script>
+</body>
+</html>

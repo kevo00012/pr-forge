@@ -39,3 +39,12 @@ create policy "own workouts" on public.workouts
   for all to authenticated
   using (user_id = (select auth.uid()))
   with check (user_id = (select auth.uid()));
+
+-- Let signed-in users reach these tables through the Data API (row level security above
+-- still limits them to their own rows). Signed-out visitors (anon) get no access at all.
+-- Needed when "Automatically expose new tables" is turned off in the project settings.
+grant usage on schema public to authenticated;
+grant select, insert, update, delete on public.profiles to authenticated;
+grant select, insert, update, delete on public.workouts to authenticated;
+revoke all on public.profiles from anon;
+revoke all on public.workouts from anon;

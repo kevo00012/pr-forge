@@ -1,6 +1,6 @@
 # PR Forge (web)
 
-A phone-first strength-training log that runs in the browser. No app store, no account, no server: workouts are saved in the browser on your phone.
+A phone-first strength-training log that runs in the browser. No app store. Sign in with Google; workouts are saved on your phone and backed up to your own account (Supabase), so they come back on a new phone.
 
 > Make logging effortless. Make progress obvious. Keep the lifter in control.
 
@@ -10,7 +10,7 @@ Live at: **https://kevo00012.github.io/pr-forge/**
 
 - **Today:** this week's day strip, an "Up next" workout (the saved workout you've gone longest without doing), and highlights (this week's volume, vs last week, PRs this week). It never shows -100%.
 - **Workouts:** saved workouts (exercises + number of sets). Starting one fills in last session's numbers as faded hints. Hints only count once you confirm the set.
-- **First open:** a welcome screen explains that data stays on the phone, how to add it to the home screen, and sets units and rest timer. It also offers Fitbod import and backup restore.
+- **First open:** a one-time joke question, then Google sign-in (required), then a welcome screen that explains the backup, how to add it to the home screen, and sets units and rest timer. It also offers Fitbod import and backup restore.
 - **Active workout:** one exercise open at a time with its current set outlined in orange; tap any other exercise to open it. An open exercise can be swapped for another or moved up or down. Barbell lifts show the plates per side under the current set (bar weight is in Progress settings). Each lift can be logged as weight × reps, reps only, added weight, assistance or seconds, and the choice is remembered. Weight / reps / ✓ for each set. Tap a set number to mark it as a warm-up. Per-arm and per-leg exercises show "Per arm"/"Per leg" and are never double-counted. You get a rest timer, a full-screen PR panel when a working set beats your previous best estimated 1RM (never on the first session of a lift or on warm-ups), and you can switch tabs while a workout is running. Finishing shows a "Workout saved" summary.
 - **Progress:** weekly volume chart and training frequency, per-lift trends (Progressing / Holding / Stalled / Down / Paused / Building data) grouped by what needs attention, with a plain explanation of how they're worked out. Tap a lift for its chart, sessions and ideas to try. Also personal records, lb/kg, rest timer length, bar weight, Fitbod import with undo, backup export/restore, and erase.
 - **History:** finished workouts by month, with details, editing (name, date, sets, exercises), "Save as a workout", and delete. Edited and imported workouts never count as PRs, but later sessions still have to beat them.
@@ -18,7 +18,7 @@ Live at: **https://kevo00012.github.io/pr-forge/**
 
 ## Try it on your PC
 
-Double-click `index.html`. It opens in your browser and works. (Offline caching only switches on once it's hosted.)
+Run `node tools/serve.js` and open http://localhost:8000/. Google sign-in needs a real web address, so opening `index.html` by double-clicking no longer works past the sign-in screen. (Offline caching only switches on once it's hosted.)
 
 ## Publish it with GitHub Pages (one time)
 
@@ -37,12 +37,15 @@ Double-click `index.html`. It opens in your browser and works. (Offline caching 
 
 ### Updating later
 
-Upload the changed files to the repo again (same "Add file → Upload files" button, then commit). Before uploading, bump the version in `sw.js` (`CACHE = 'pr-forge-web-1.4.2'`) so phones fetch the new files.
+Upload the changed files to the repo again (same "Add file → Upload files" button, then commit). Before uploading, bump the version in `sw.js` (`CACHE = 'pr-forge-web-1.5.0'`) so phones fetch the new files.
 
 ## Your data
 
-- Everything is stored on the device, in the browser (`localStorage`, key `pr-forge:web:v1`). Nothing is sent anywhere, and the fonts are bundled in `fonts/` (Barlow, SIL Open Font License; see `fonts/OFL.txt`), so the app makes no outside requests.
-- **Export a backup regularly** (Progress → Settings & data → Export backup) and keep it in Files/iCloud. Restoring a backup replaces the data on that device. A safety copy of what was there is kept under `pr-forge:web:v1:before-restore`.
+- The working copy is on the phone, in the browser (`localStorage`, key `pr-forge:web:v1`), so logging works offline. When online, finished workouts, settings, saved workouts and custom exercises are copied to the person's own rows in Supabase (project `pvtcqdtqycihlontmirl`). Row level security means each signed-in person can only read and write their own rows. The workout in progress stays on the phone until it's finished.
+- Sync rules are in `js/sync.js`; sign-in and network calls in `js/cloud.js`; the database setup in `supabase/schema.sql` (paste into Supabase → SQL Editor and run). If the same workout is changed on two phones before either syncs, the phone that syncs last wins.
+- Signing out removes the phone's copy (the cloud copy stays). If a different account signs in on the same phone, the old data is kept aside under `pr-forge:web:v1:other-account:<id>`.
+- Backup files still work (Progress → Settings & data). Restoring one replaces everything, on the phone and in the account. A safety copy of what was there is kept under `pr-forge:web:v1:before-restore`.
+- Outside requests: only to Supabase (sign-in and backup) and Google (sign-in). Fonts are bundled in `fonts/` (Barlow, SIL Open Font License; see `fonts/OFL.txt`).
 
 ## Logo
 
@@ -55,8 +58,8 @@ The `icons` folder holds the logo, cropped to its badge and resized from the ori
 
 ## For developers
 
-- Plain HTML/CSS/JavaScript, no build step, no dependencies.
-- `js/units.js`, `js/metrics.js`, `js/store.js`, `js/plates.js`, `js/importers.js`, and `js/exercises.js` are pure logic. `js/app.js` is the UI.
+- Plain HTML/CSS/JavaScript, no build step. One dependency: supabase-js 2.118.0 (MIT), bundled as `js/vendor/supabase.js` (the package's UMD build; licence in `js/vendor/supabase.LICENSE`) so it works offline.
+- `js/units.js`, `js/metrics.js`, `js/store.js`, `js/plates.js`, `js/importers.js`, `js/sync.js` and `js/exercises.js` are pure logic. `js/cloud.js` handles Google sign-in and talks to Supabase. `js/app.js` is the UI.
 - Tests: open a terminal in this folder and run `node --test` (needs Node 20+).
 - Exercise list: `js/exercise-library.js` is generated from [free-exercise-db](https://github.com/yuhonas/free-exercise-db) (Unlicense) by `node tools/build-exercises.js path/to/exercises.json`. Only names, muscles and equipment are kept. Per-arm and per-leg labels are worked out from exercise names.
 - Local server: run `node tools/serve.js`, then open http://localhost:8000/. The offline cache stays off on localhost, so a refresh always shows your latest edits.

@@ -1,5 +1,5 @@
 /* PR Forge — saved data (browser localStorage) plus backup export/import.
- * Everything lives on the device; there is no account and no server. */
+ * The phone's copy is the working copy; js/sync.js copies it to the person's cloud account. */
 (function (root) {
   'use strict';
 
@@ -158,7 +158,7 @@
   }
 
   var api = {
-    KEY: KEY, uid: uid, defaults: defaults, normalise: normalise,
+    KEY: KEY, uid: uid, defaults: defaults, normalise: normalise, cleanWorkout: cleanWorkout,
     load: load, save: save, exportBackup: exportBackup, parseBackup: parseBackup
   };
 

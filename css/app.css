@@ -347,6 +347,8 @@ input::placeholder { color: var(--ghost); opacity: 1; }
 .session-val { font-family: var(--cond); font-weight: 600; font-size: 17px; color: var(--text); font-variant-numeric: tabular-nums; text-align: right; }
 .setup-head { display: flex; flex-direction: column; gap: 10px; }
 .setup-logo { width: 88px; height: 88px; border-radius: 17%; }
+.warn-text { color: var(--warn-text); }
+.privacy-link { display: block; min-height: 44px; line-height: 44px; text-decoration: underline; }
 .greet { min-height: calc(100vh - 64px); display: flex; flex-direction: column; justify-content: center; gap: 24px; }
 .trend-main { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .trend-name { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }

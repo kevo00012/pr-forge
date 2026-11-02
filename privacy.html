@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0D0C0B">
+  <meta name="color-scheme" content="dark">
+  <title>PR Forge privacy</title>
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <style>
+    @font-face { font-family: "Barlow"; font-weight: 400; font-display: swap; src: url("fonts/barlow-latin-400-normal.woff2") format("woff2"); }
+    @font-face { font-family: "Barlow"; font-weight: 600; font-display: swap; src: url("fonts/barlow-latin-600-normal.woff2") format("woff2"); }
+    @font-face { font-family: "Barlow Condensed"; font-weight: 800; font-display: swap; src: url("fonts/barlow-condensed-latin-800-normal.woff2") format("woff2"); }
+    :root { --bg: #0d0c0b; --text: #f6f3ef; --soft: #d9d3cc; --muted: #a8a098; --line: #2e2a26; --accent: #ff7a32; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--bg); color: var(--text); font-family: "Barlow", "Helvetica Neue", Arial, sans-serif; }
+    main { max-width: 640px; margin: 0 auto; padding: 32px 16px 56px; }
+    h1, h2 { font-family: "Barlow Condensed", "Arial Narrow", sans-serif; font-weight: 800; text-transform: uppercase; line-height: 1; margin: 0; }
+    h1 { font-size: 44px; margin-bottom: 8px; }
+    h2 { font-size: 22px; letter-spacing: .03em; margin: 28px 0 8px; }
+    p, li { font-size: 16px; line-height: 1.5; color: var(--soft); margin: 0 0 10px; }
+    ul { padding-left: 20px; margin: 0 0 10px; }
+    strong { color: var(--text); }
+    a { color: var(--accent); }
+    .muted { color: var(--muted); font-size: 14px; }
+    .back { display: inline-block; margin-top: 28px; min-height: 44px; line-height: 44px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Privacy</h1>
+  <p class="muted">PR Forge · last updated 2 November 2026</p>
+
+  <p>PR Forge is a free workout log made by one person, for their own training and their friends’. It isn't a business, it has no ads, and your data is never sold or shared.</p>
+
+  <h2>What PR Forge keeps</h2>
+  <ul>
+    <li><strong>Your Google account’s email address and name</strong>, so you can sign in and only you can see your data. PR Forge never sees your Google password.</li>
+    <li><strong>Your training data:</strong> workouts, sets, weights and reps, saved workouts, custom exercises, and settings such as lb/kg and rest timer.</li>
+  </ul>
+  <p>Nothing else is collected: no location, contacts, analytics or tracking.</p>
+
+  <h2>Where it’s stored</h2>
+  <ul>
+    <li><strong>On your phone</strong>, in the browser’s storage, so the app works without signal.</li>
+    <li><strong>In a database run by Supabase</strong>, so your workouts are backed up and come back on a new phone. The database only lets a signed-in person read and write their own records.</li>
+  </ul>
+  <p>Sign-in is handled by Google and Supabase. Their own privacy policies apply to what they do: <a href="https://policies.google.com/privacy">Google</a>, <a href="https://supabase.com/privacy">Supabase</a>.</p>
+
+  <h2>Who can see it</h2>
+  <p>Only you, when signed in. The person who runs PR Forge has administrator access to the database and could technically look at the records, but won’t except to fix a problem you’ve asked about.</p>
+
+  <h2>Deleting your data</h2>
+  <ul>
+    <li>In the app, go to <strong>Progress → Settings &amp; data → Erase all my data</strong>. That deletes your workouts and settings from your phone and from the backup.</li>
+    <li>To have your sign-in record (email and name) removed as well, open a request at <a href="https://github.com/kevo00012/pr-forge/issues">github.com/kevo00012/pr-forge/issues</a> or ask the person who sent you PR Forge.</li>
+  </ul>
+
+  <h2>Changes</h2>
+  <p>If this page changes, the date at the top changes too.</p>
+
+  <a class="back" href="./">Back to PR Forge</a>
+</main>
+</body>
+</html>

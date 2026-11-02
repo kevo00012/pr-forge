@@ -13,7 +13,7 @@ Live at: **https://kevo00012.github.io/pr-forge/**
 - **Active workout:** one exercise open at a time with its current set outlined in orange; tap any other exercise to open it. Weight / reps / ✓ for each set. Tap a set number to mark it as a warm-up. Per-arm and per-leg exercises show "Per arm"/"Per leg" and are never double-counted. You get a rest timer, a full-screen PR panel when a working set beats your previous best estimated 1RM (never on the first session of a lift or on warm-ups), and you can switch tabs while a workout is running. Finishing shows a "Workout saved" summary.
 - **Progress:** per-lift trend rows (Progressing / Holding / Stalled / Building data) with a plain explanation of how they're worked out, personal records, lb/kg, rest timer length, backup export/restore, and erase.
 - **History:** finished workouts by month, with details, "Save as a workout", and delete.
-- About 100 built-in exercises plus your own custom ones. Works offline once it has loaded over the internet.
+- 895 built-in exercises (common ones listed first) plus your own custom ones. Works offline once it has loaded over the internet.
 
 ## Try it on your PC
 
@@ -56,5 +56,6 @@ The splash screen shows `icons/logo.png` if it exists, otherwise just the text "
 - Plain HTML/CSS/JavaScript, no build step, no dependencies.
 - `js/units.js`, `js/metrics.js`, `js/store.js`, and `js/exercises.js` are pure logic. `js/app.js` is the UI.
 - Tests: open a terminal in this folder and run `node --test` (needs Node 20+).
+- Exercise list: `js/exercise-library.js` is generated from [free-exercise-db](https://github.com/yuhonas/free-exercise-db) (Unlicense) by `node tools/build-exercises.js path/to/exercises.json`. Only names, muscles and equipment are kept. Per-arm and per-leg labels are worked out from exercise names.
 - Local server: run `node tools/serve.js`, then open http://localhost:8000/. The offline cache stays off on localhost, so a refresh always shows your latest edits.
 - Never commit backups or Fitbod exports: they hold personal training data and this repo is public. `.gitignore` blocks `pr-forge-backup-*.json` and `*.csv`.

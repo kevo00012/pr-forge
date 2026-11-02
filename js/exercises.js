@@ -124,9 +124,17 @@
   var EQUIPMENT = ['Barbell', 'Dumbbell', 'Machine', 'Cable', 'Bodyweight',
     'Kettlebell', 'Smith machine', 'EZ bar', 'Trap bar', 'Band', 'Other'];
 
+  // Generated from free-exercise-db (see tools/build-exercises.js). Curated rows stay first and keep
+  // their IDs, because saved workouts refer to exercises by ID.
+  var LIBRARY = (typeof module === 'object' && module.exports && typeof require === 'function')
+    ? (function () { try { return require('./exercise-library.js'); } catch (e) { return { rows: [], aliases: {} }; } })()
+    : root.PRF.exerciseLibrary;
+
   var BUILT_IN = ROWS.map(function (r) {
-    return { id: r[0], name: r[1], muscle: r[2], equipment: r[3], side: r[4], custom: false };
-  });
+    return { id: r[0], name: r[1], muscle: r[2], equipment: r[3], side: r[4], custom: false, alias: LIBRARY.aliases[r[0]] || '' };
+  }).concat(LIBRARY.rows.map(function (r) {
+    return { id: r[0], name: r[1], muscle: r[2], equipment: r[3], side: r[4], custom: false, library: true };
+  }));
 
   var api = { BUILT_IN: BUILT_IN, MUSCLES: MUSCLES, EQUIPMENT: EQUIPMENT };
 

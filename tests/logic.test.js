@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const units = require('../js/units.js');
 const m = require('../js/metrics.js');
 const store = require('../js/store.js');
+const ex = require('../js/exercises.js');
 
 let n = 0;
 const id = () => 'id' + (++n);
@@ -19,6 +20,38 @@ function workout(dateStr, unit, entries, extra) {
     }))
   }, extra || {});
 }
+
+test('exercise library: 800+ rows, unique IDs, valid fields, curated IDs kept', () => {
+  assert.ok(ex.BUILT_IN.length >= 800);
+  const ids = new Set(ex.BUILT_IN.map((e) => e.id));
+  assert.equal(ids.size, ex.BUILT_IN.length);
+  const names = new Set(ex.BUILT_IN.map((e) => e.name.toLowerCase()));
+  assert.equal(names.size, ex.BUILT_IN.length);
+  const muscles = new Set(ex.MUSCLES.concat(['Other']));
+  ex.BUILT_IN.forEach((e) => {
+    assert.ok(muscles.has(e.muscle), e.id + ' muscle ' + e.muscle);
+    assert.ok(ex.EQUIPMENT.includes(e.equipment), e.id + ' equipment ' + e.equipment);
+    assert.ok(['', 'arm', 'leg'].includes(e.side), e.id + ' side ' + e.side);
+  });
+  // Saved workouts refer to these IDs, so they must never change.
+  ['bench-press', 'deadlift', 'back-squat', 'db-row', 'bulgarian-split-squat', 'push-up', 'plank', 'thruster']
+    .forEach((id) => assert.ok(ids.has(id), id));
+  // A merged movement appears once, under its curated ID, and is findable by its source name.
+  assert.ok(!ids.has('fedb:Barbell_Deadlift'));
+  assert.equal(ex.BUILT_IN.find((e) => e.id === 'pec-deck').alias, 'Butterfly');
+});
+
+test('exercise library: one-sided lifts are labelled and volume still counts once', () => {
+  const byName = (n) => ex.BUILT_IN.find((e) => e.name === n);
+  assert.equal(byName('One-Arm Kettlebell Row').side, 'arm');
+  assert.equal(byName('Single-Leg Leg Extension').side, 'leg');
+  assert.equal(byName('Barbell Walking Lunge').side, 'leg');
+  assert.equal(byName('Split Squats').side, 'leg');
+  assert.equal(byName('Reverse Barbell Curl').side, '');
+  assert.equal(byName('Seated Close-Grip Concentration Barbell Curl').side, '');
+  const w = workout('2026-10-01T10:00:00', 'lb', [['fedb:One-Arm_Kettlebell_Row', [[50, 10]]]]);
+  assert.equal(m.workoutVolumeLb(w), 500);
+});
 
 test('units convert and format', () => {
   assert.equal(units.fmtNum(100), '100');

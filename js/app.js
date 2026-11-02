@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises;
-  var VERSION = '1.1.1';
+  var VERSION = '1.2.0';
 
   var S = ST.load();
   var V = {
@@ -629,15 +629,22 @@
     var words = q ? q.split(/\s+/) : [];
     return allExercises().filter(function (e) {
       if (p.muscle && e.muscle !== p.muscle) return false;
-      var hay = (e.name + ' ' + e.muscle + ' ' + e.equipment).toLowerCase();
+      var hay = (e.name + ' ' + (e.alias || '') + ' ' + e.muscle + ' ' + e.equipment).toLowerCase();
       return words.every(function (wd) { return hay.indexOf(wd) !== -1; });
-    }).sort(function (a, b) { return a.name.localeCompare(b.name); });
+    }).sort(function (a, b) {
+      return (a.library ? 1 : 0) - (b.library ? 1 : 0) || a.name.localeCompare(b.name);
+    });
   }
   function pickerListHtml() {
     var p = V.picker;
-    var rows = pickerResults().map(function (e) {
+    var results = pickerResults();
+    var firstMore = results.filter(function (e) { return e.library; })[0];
+    var hasCommon = results[0] && !results[0].library;
+    var rows = results.map(function (e) {
       var on = !!p.selected[e.id];
-      return '<button class="pick' + (on ? ' on' : '') + '" data-act="picker-toggle" data-id="' + esc(e.id) + '" aria-pressed="' + on + '">' +
+      return (e === results[0] && hasCommon ? '<h3 class="pick-group">Common</h3>' : '') +
+        (e === firstMore ? '<h3 class="pick-group">' + (hasCommon ? 'More exercises' : 'All matches') + '</h3>' : '') +
+        '<button class="pick' + (on ? ' on' : '') + '" data-act="picker-toggle" data-id="' + esc(e.id) + '" aria-pressed="' + on + '">' +
         '<span class="pick-text"><strong>' + esc(e.name) + '</strong><span class="muted small">' + esc(e.muscle) + ' · ' + esc(e.equipment) +
         (sideLabel(e) ? ' · ' + sideLabel(e) : '') + (e.custom ? ' · Custom' : '') + '</span></span>' +
         '<span class="pick-box">' + (on ? icon('check') : '') + '</span></button>';
@@ -651,7 +658,7 @@
   }
   function viewPicker() {
     var p = V.picker;
-    var chips = ['All'].concat(EX.MUSCLES).map(function (m) {
+    var chips = ['All'].concat(EX.MUSCLES, ['Other']).map(function (m) {
       var on = (m === 'All' && !p.muscle) || m === p.muscle;
       return '<button class="chip' + (on ? ' on' : '') + '" data-act="picker-muscle" data-v="' + esc(m) + '">' + esc(m) + '</button>';
     }).join('');

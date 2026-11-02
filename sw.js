@@ -1,5 +1,5 @@
 /* PR Forge — offline cache. Bump CACHE when you change any file so phones pick up the update. */
-var CACHE = 'pr-forge-web-1.1.1';
+var CACHE = 'pr-forge-web-1.2.0';
 var SHELL = [
   './',
   'index.html',
@@ -12,6 +12,7 @@ var SHELL = [
   'fonts/barlow-condensed-latin-700-normal.woff2',
   'fonts/barlow-condensed-latin-800-normal.woff2',
   'js/units.js',
+  'js/exercise-library.js',
   'js/exercises.js',
   'js/metrics.js',
   'js/store.js',

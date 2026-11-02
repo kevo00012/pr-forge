@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises;
-  var VERSION = '1.1.0';
+  var VERSION = '1.1.1';
 
   var S = ST.load();
   var V = {

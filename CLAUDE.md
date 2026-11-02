@@ -49,7 +49,7 @@ Philosophy: **Make logging effortless. Make progress obvious. Keep the lifter in
 
 ## Next work (in order)
 
-1. Done (1 Nov 2026, app 1.1.0): Forge Scoreboard applied to all screens. Not built from the mockups: Progress time-range toggle (8 wk/6 mo/All), "usual 3 sessions" goal line. Barlow loads from Google Fonts and is cached by `sw.js`.
+1. Done (1 Nov 2026, app 1.1.0): Forge Scoreboard applied to all screens. Not built from the mockups: Progress time-range toggle (8 wk/6 mo/All), "usual 3 sessions" goal line. Barlow is bundled in `fonts/` (latin subset, Fontsource 5.3.0, OFL) and precached by `sw.js`.
 2. Plate calculator on the active set (lb: 45 lb bar, plates 45/35/25/10/5/2.5; kg equivalents).
 3. Edit a past workout from History (no PR banners on edits).
 4. Bundle free-exercise-db once `exercises.json` is in this folder.

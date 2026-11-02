@@ -36,11 +36,11 @@ Double-click `index.html`. It opens in your browser and works. (Offline caching 
 
 ### Updating later
 
-Upload the changed files to the repo again (same "Add file → Upload files" button, then commit). Before uploading, bump the version in `sw.js` (`CACHE = 'pr-forge-web-1.1.1'`) so phones fetch the new files.
+Upload the changed files to the repo again (same "Add file → Upload files" button, then commit). Before uploading, bump the version in `sw.js` (`CACHE = 'pr-forge-web-1.1.2'`) so phones fetch the new files.
 
 ## Your data
 
-- Everything is stored on the device, in the browser (`localStorage`, key `pr-forge:web:v1`). Workout data is never sent anywhere. The only outside request is for the Barlow fonts from Google Fonts, which sees an ordinary web request (such as your IP address) and no workout data.
+- Everything is stored on the device, in the browser (`localStorage`, key `pr-forge:web:v1`). Nothing is sent anywhere, and the fonts are bundled in `fonts/` (Barlow, SIL Open Font License; see `fonts/OFL.txt`), so the app makes no outside requests.
 - **Export a backup regularly** (Progress → Settings & data → Export backup) and keep it in Files/iCloud. Restoring a backup replaces the data on that device. A safety copy of what was there is kept under `pr-forge:web:v1:before-restore`.
 
 ## Logo

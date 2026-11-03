@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '1.6.1';
+  var VERSION = '1.6.2';
 
   var S = ST.load();
   var V = {
@@ -311,6 +311,15 @@
     return last !== todayKey();
   }
 
+  // ----- App updates -----
+  // A new version has taken over the offline cache; the screen still runs the old code until reloaded.
+  // Never shown on the logging screens, so it can't get in the way mid-set.
+  function updateBarHtml() {
+    if (!V.updateReady || V.screen === 'workout' || V.screen === 'editWorkout') return '';
+    return '<div class="update-bar" role="status"><span><strong>Update ready.</strong> Reload to get the newest version.</span>' +
+      '<button class="btn primary sm" data-act="app-reload">Reload</button></div>';
+  }
+
   function render() {
     var body;
     var g = gate();
@@ -334,7 +343,7 @@
 
     var noTabs = !!g || needsSetup() || V.screen === 'editWorkout' || (V.screen === 'historyDetail' && V.summary === V.historyId);
     app.innerHTML =
-      '<main class="screen' + (noTabs ? ' no-tabs' : '') + '">' + body + '</main>' +
+      '<main class="screen' + (noTabs ? ' no-tabs' : '') + '">' + updateBarHtml() + body + '</main>' +
       (S.active && !g && V.screen !== 'workout' && V.screen !== 'editWorkout' ? activeBar() : '') +
       (V.screen === 'workout' ? restBar() : '') +
       (noTabs ? '' : tabBar()) +
@@ -919,11 +928,20 @@
 
   // ----- First open -----
   // A one-time joke question before setup. Both answers are yes.
+  // Every answer is a yes. Two different ones are picked each time the question shows.
+  var GREET_YES = ['Hell yes', 'Obviously', 'Absolutely', 'Duh', 'Hell yeah', 'Yup', 'No cap', 'Facts', 'Big facts', 'Fo sho',
+    'You know it', 'Bet', 'Damn right', '100%', 'Say less', 'Periodt', 'Yessir', 'Without a doubt', 'Abso-freakin-lutely',
+    'For real', 'Totally', 'Yasss', 'Indubitably', 'Naturally', 'Is water wet?', 'Was that a question?'];
   function viewGreet() {
-    return '<section class="greet"><img class="setup-logo" src="icons/logo.png" alt="PR Forge logo" onerror="this.remove()">' +
-      '<h1 class="big">Are you a sexy ass bitch?</h1>' +
-      '<div class="foot-actions"><button class="btn primary block" data-act="greet-yes">Hell yes</button>' +
-      '<button class="btn primary block" data-act="greet-yes">Obviously</button></div></section>';
+    if (!V.greetPick) {
+      var i = Math.floor(Math.random() * GREET_YES.length);
+      var j = Math.floor(Math.random() * (GREET_YES.length - 1));
+      if (j >= i) j++;
+      V.greetPick = [GREET_YES[i], GREET_YES[j]];
+    }
+    return '<section class="greet"><h1 class="big">Are you a sexy ass bitch?</h1>' +
+      '<div class="foot-actions"><button class="btn primary block" data-act="greet-yes">' + esc(V.greetPick[0]) + '</button>' +
+      '<button class="btn primary block" data-act="greet-yes">' + esc(V.greetPick[1]) + '</button></div></section>';
   }
   function viewSetup() {
     var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
@@ -1784,6 +1802,7 @@
       if (read) read.textContent = el.dataset.read;
       document.querySelectorAll('.vol-col').forEach(function (c) { c.classList.toggle('picked', c === el); });
     },
+    'app-reload': function () { save(); location.reload(); },
     'greet-yes': function () {
       V.greeted = true;
       try { localStorage.setItem(GREET_KEY, todayKey()); } catch (e) { /* ignore */ }
@@ -2015,7 +2034,19 @@
 
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* ignore */ }
     if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && location.hostname !== 'localhost') {
-      navigator.serviceWorker.register('sw.js').catch(function () { /* offline cache unavailable */ });
+      var hadController = !!navigator.serviceWorker.controller; // false on the very first install: that isn't an update
+      navigator.serviceWorker.register('sw.js').then(function (reg) {
+        var check = function () { try { reg.update(); } catch (e) { /* offline */ } };
+        document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') check(); });
+        setInterval(function () { if (document.visibilityState === 'visible') check(); }, 30 * 60000);
+      }).catch(function () { /* offline cache unavailable */ });
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (!hadController) { hadController = true; return; }
+        V.updateReady = true;
+        // Show it now unless someone is typing; otherwise it appears with the next screen change.
+        var typing = document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+        if (!typing && !V.modal) render();
+      });
     }
   }
 

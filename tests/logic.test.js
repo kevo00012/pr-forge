@@ -429,3 +429,12 @@ test('workout files: PDF text items rebuild lines and table columns; CSV becomes
     [['back-squat', 5, '5'], ['leg-press', 3, '12']]);
   assert.throws(() => importers.csvToPlanText(FITBOD), /Fitbod/);
 });
+
+test('workout CSV: columns found by name in any order, a Workout/Day column splits workouts', () => {
+  const plan = (csv) => importers.parseWorkoutText(importers.csvToPlanText(csv), { exercises: ex.BUILT_IN }).workouts
+    .map((w) => [w.name, w.exercises.map((e) => [e.exerciseId, e.sets, e.reps])]);
+  assert.deepEqual(plan('Workout,Exercise,Sets,Reps\nUpper,Bench Press,4,6-8\nUpper,Pull-ups,3,AMRAP\nLower,Back Squat,5,5\n'),
+    [['Upper', [['bench-press', 4, '6-8'], ['pull-up', 3, 'AMRAP']]], ['Lower', [['back-squat', 5, '5']]]]);
+  assert.deepEqual(plan('Day,Name,Reps,Sets,Rest\n1,Overhead press,8,3,90s\n2,Deadlift,5,1,3 min\n'),
+    [['Day 1', [['overhead-press', 3, '8']]], ['Day 2', [['deadlift', 1, '5']]]]);
+});

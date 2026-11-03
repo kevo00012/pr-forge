@@ -1310,7 +1310,7 @@
       '<p class="muted small">Paste a workout plan, for example one Claude wrote for you. One exercise per line works best, like “Bench press 4x8”. A short line above the exercises becomes the workout’s name; paste several days at once and each becomes its own workout.</p>' +
       '<label class="field"><span>Workout plan</span><textarea id="plan-text" rows="9" placeholder="Upper body&#10;Bench press 4x8&#10;Bent-over row 4x8&#10;Overhead press 3x10&#10;Pull-ups 3xAMRAP"></textarea></label>' +
       '<div class="row-2"><button class="btn ghost sm" data-act="plan-file-pick">Choose a file</button><button class="btn ghost sm" data-act="plan-copy-tip">Tip for Claude</button></div>' +
-      '<p class="muted small">Files: PDF, text (.txt, .md) or CSV. For a photo or a Word file, copy the text and paste it here.</p>' +
+      '<p class="muted small">Files: PDF, text (.txt, .md) or CSV. A CSV needs an Exercise column; Sets, Reps and a Workout or Day column are optional. For a photo or a Word file, copy the text and paste it here.</p>' +
       '<input type="file" id="plan-file" accept=".pdf,.txt,.text,.md,.markdown,.csv,application/pdf,text/plain,text/markdown,text/csv" hidden>' +
       '<div class="modal-actions"><button class="btn ghost" data-act="modal-cancel">Cancel</button><button class="btn primary" data-act="plan-preview">Preview</button></div>');
     var ta = document.getElementById('plan-text');

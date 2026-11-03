@@ -264,7 +264,11 @@
         var nameCell = cells.filter(function (c) { return /[a-z]/i.test(c) && !/^(\d+\s*[-–]\s*)?\d+\s*(reps?|s|sec)?$/i.test(c); })[0];
         var nums = cells.filter(function (c) { return /^\d/.test(c); });
         if (!nameCell || /^(exercise|movement|sets?|reps?|rest|notes?)$/i.test(nameCell)) return;
-        if (nums.length) { name = nameCell; sets = parseInt(nums[0], 10); reps = nums[1] || ''; }
+        if (nums.length) {
+          name = nameCell; sets = parseInt(nums[0], 10);
+          var after = cells[cells.indexOf(nums[0]) + 1];                   // reps: the cell after sets ("8-10", "AMRAP")
+          reps = after && after !== nameCell && after.length <= 12 ? after : '';
+        }
         else line = nameCell;
       }
       if (name === null) {
@@ -330,13 +334,36 @@
     }).filter(Boolean).join('\n');
   }
 
-  /** A CSV of exercises (any columns) as table rows the plan reader understands. Refuses a Fitbod history export. */
+  /**
+   * A CSV of exercises as lines the plan reader understands. Refuses a Fitbod history export.
+   * With a header row, columns are found by name in any order: Exercise (or Name/Movement), Sets, Reps,
+   * and optionally Workout/Day/Session, which splits the rows into separate workouts. Without one, rows pass through as table rows.
+   */
   function csvToPlanText(text) {
-    var rows = parseCsv(text);
-    if (rows.length && column(rows[0], /^date$/i) >= 0 && column(rows[0], /^exercise$/i) >= 0 && column(rows[0], /^reps$/i) >= 0) {
+    var rows = parseCsv(text).filter(function (r) { return r.some(function (c) { return String(c).trim(); }); });
+    if (!rows.length) return '';
+    var head = rows[0];
+    if (column(head, /^date$/i) >= 0 && column(head, /^exercise$/i) >= 0 && column(head, /^reps$/i) >= 0) {
       throw new Error('This is a Fitbod history export. Use Settings → Import from Fitbod for it.');
     }
-    return rows.map(function (r) { return '| ' + r.join(' | ') + ' |'; }).join('\n');
+    var cEx = column(head, /^(exercise|exercise name|name|movement|lift)$/i);
+    if (cEx < 0) return rows.map(function (r) { return '| ' + r.join(' | ') + ' |'; }).join('\n');
+    var cSets = column(head, /^(sets?|# ?sets|number of sets)$/i);
+    var cReps = column(head, /^(reps?|rep range|repetitions|target reps)$/i);
+    var cDay = column(head, /^(workout|workout name|day|session|routine|template)$/i);
+    var out = [], lastDay = null;
+    rows.slice(1).forEach(function (r) {
+      var name = String(r[cEx] || '').trim();
+      if (!name) return;
+      if (cDay >= 0) {
+        var day = String(r[cDay] || '').trim();
+        if (day && day !== lastDay) { out.push(/^\d+$/.test(day) ? 'Day ' + day : day); lastDay = day; }
+      }
+      var sets = cSets >= 0 ? String(r[cSets] || '').trim() : '';
+      var reps = cReps >= 0 ? String(r[cReps] || '').trim() : '';
+      out.push('| ' + name + ' | ' + (/^\d/.test(sets) ? sets : '3') + (reps ? ' | ' + reps : '') + ' |');
+    });
+    return out.join('\n');
   }
 
   var api = { parseCsv: parseCsv, parseFitbod: parseFitbod, parseWorkoutText: parseWorkoutText, pdfItemsToText: pdfItemsToText, csvToPlanText: csvToPlanText };

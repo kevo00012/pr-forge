@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '1.6.2';
+  var VERSION = '1.6.3';
 
   var S = ST.load();
   var V = {
@@ -876,7 +876,7 @@
     var err = CLOUD.signInError();
     var busy = CLOUD.returningFromSignIn() && !err;
     var hasData = S.workouts.length > 0 || S.templates.length > 0 || !!S.active;
-    return '<section class="greet"><img class="setup-logo" src="icons/logo.png" alt="PR Forge logo" onerror="this.remove()">' +
+    return '<section class="greet">' +
       '<h1>' + (busy ? 'Signing you in…' : 'Sign in') + '</h1>' +
       (busy ? '<p class="lede">Hang on a second.</p>' :
         '<p class="lede">Your workouts are kept on this phone and backed up to your own account, so they come back if you change phones. Only you can see them.</p>' +
@@ -890,7 +890,7 @@
 
   // Shown on a phone with no data yet, while the first download after signing in runs.
   function viewRestoring() {
-    return '<section class="greet"><img class="setup-logo" src="icons/logo.png" alt="PR Forge logo" onerror="this.remove()">' +
+    return '<section class="greet">' +
       '<h1>Loading your workouts…</h1><p class="lede">Getting everything from your account. This only happens the first time on this phone.</p></section>';
   }
 

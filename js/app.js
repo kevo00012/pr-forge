@@ -928,11 +928,20 @@
 
   // ----- First open -----
   // A one-time joke question before setup. Both answers are yes.
+  // Every answer is a yes. Two different ones are picked each time the question shows.
+  var GREET_YES = ['Hell yes', 'Obviously', 'Absolutely', 'Duh', 'Hell yeah', 'Yup', 'No cap', 'Facts', 'Big facts', 'Fo sho',
+    'You know it', 'Bet', 'Damn right', '100%', 'Say less', 'Periodt', 'Yessir', 'Without a doubt', 'Abso-freakin-lutely',
+    'For real', 'Totally', 'Yasss', 'Indubitably', 'Naturally', 'Is water wet?', 'Was that a question?'];
   function viewGreet() {
-    return '<section class="greet"><img class="setup-logo" src="icons/logo.png" alt="PR Forge logo" onerror="this.remove()">' +
-      '<h1 class="big">Are you a sexy ass bitch?</h1>' +
-      '<div class="foot-actions"><button class="btn primary block" data-act="greet-yes">Hell yes</button>' +
-      '<button class="btn primary block" data-act="greet-yes">Obviously</button></div></section>';
+    if (!V.greetPick) {
+      var i = Math.floor(Math.random() * GREET_YES.length);
+      var j = Math.floor(Math.random() * (GREET_YES.length - 1));
+      if (j >= i) j++;
+      V.greetPick = [GREET_YES[i], GREET_YES[j]];
+    }
+    return '<section class="greet"><h1 class="big">Are you a sexy ass bitch?</h1>' +
+      '<div class="foot-actions"><button class="btn primary block" data-act="greet-yes">' + esc(V.greetPick[0]) + '</button>' +
+      '<button class="btn primary block" data-act="greet-yes">' + esc(V.greetPick[1]) + '</button></div></section>';
   }
   function viewSetup() {
     var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;

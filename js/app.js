@@ -440,8 +440,7 @@
     if (!list) {
       list = '<section class="card empty"><p>No saved workouts yet.</p><p class="muted small">A saved workout is a list of exercises and how many sets you do of each. Starting one fills in last time’s numbers as hints.</p></section>';
     }
-    var copy = '<div class="row-2"><button class="btn ghost" data-act="plan-paste">Paste a workout</button>' +
-      (M.finished(S.workouts).length ? '<button class="btn ghost" data-act="template-from-past">Copy a past one</button>' : '<span></span>') + '</div>';
+    var copy = '<button class="btn ghost block" data-act="plan-paste">Paste a workout</button>';
     return '<header class="top row"><h1>Workouts</h1><div class="top-tools"><button class="btn primary sm" data-act="template-new">' + icon('plus', 'sm') + 'New</button>' + settingsButton() + '</div></header>' +
       list + copy + '<button class="btn ghost block" data-act="start-empty">Start an empty workout</button>';
   }
@@ -675,7 +674,7 @@
       '<div class="setting col"><span>Rest timer after each set</span><div class="chips">' + restChips + '</div></div>' +
       '<label class="setting"><span>Bar weight (' + unit() + ')</span><input class="bar-input" data-field="bar" inputmode="decimal" autocomplete="off" value="' + U.fmtNum(barFor(unit())) + '"></label></section>' +
       '<section class="card"><h2 class="card-title">Import from Fitbod</h2>' +
-      '<p class="muted small">Export your workouts from Fitbod’s settings as a CSV file, then choose it here. Imported workouts never count as PRs, but later sessions have to beat them. To turn one into a saved workout, use Workouts → Copy a past workout.</p>' +
+      '<p class="muted small">Export your workouts from Fitbod’s settings as a CSV file, then choose it here. Imported workouts never count as PRs, but later sessions have to beat them. To turn one into a saved workout, open it in History and tap Save as a workout.</p>' +
       '<button class="btn ghost block" data-act="fitbod-pick">Choose Fitbod file</button>' + importsHtml() + '</section>' +
       '<section class="card"><h2 class="card-title">Backup file</h2>' +
       '<p class="muted small">Your workouts back up to your account automatically. You can also save a copy as a file, or restore one (this replaces everything, here and in your account).</p>' +
@@ -1641,19 +1640,6 @@
     'history-to-template': function () {
       var wk = findWorkout(V.historyId); if (!wk) return;
       V.summary = null;
-      draftFromWorkout(wk);
-    },
-    'template-from-past': function () {
-      var list = M.finished(S.workouts).slice().reverse().slice(0, 40);
-      openModal('<h2>Copy a past workout</h2><p class="muted small">Makes a saved workout with the same exercises and number of sets (warm-ups not counted). You can edit it before saving.</p>' +
-        '<div class="pick-list">' + list.map(function (wk) {
-          var names = wk.exercises.map(function (e) { return exById(e.exerciseId).name; });
-          return '<button class="pick-row" data-act="template-copy" data-id="' + esc(wk.id) + '"><span class="pick-top"><strong>' + esc(wk.name) + '</strong><span class="muted small">' + relDay(wk.startedAt) + '</span></span>' +
-            '<span class="muted small">' + esc(names.slice(0, 4).join(' · ')) + (names.length > 4 ? ' +' + (names.length - 4) : '') + '</span></button>';
-        }).join('') + '</div><button class="btn ghost block" data-act="modal-cancel">Cancel</button>');
-    },
-    'template-copy': function (el) {
-      var wk = findWorkout(el.dataset.id); closeModal(false); if (!wk) return;
       draftFromWorkout(wk);
     },
     'plan-paste': function () { pastePlanForm(V.planText || ''); },

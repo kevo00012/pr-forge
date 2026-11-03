@@ -1,10 +1,11 @@
 /* PR Forge — offline cache. Bump CACHE when you change any file so phones pick up the update. */
-var CACHE = 'pr-forge-web-1.5.0';
+var CACHE = 'pr-forge-web-1.5.1';
 var SHELL = [
   './',
   'index.html',
   'css/app.css',
   'icons/logo.png',
+  'icons/splash-logo.png',
   'icons/wordmark.png',
   'icons/apple-touch-icon.png',
   'icons/icon-192.png',

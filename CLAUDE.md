@@ -25,7 +25,7 @@ Philosophy: **Make logging effortless. Make progress obvious. Keep the lifter in
 
 - Friends will use it too; each person's data is private to their own Google account. Setup must explain itself.
 - The current build is the starting point; trim and extend it, don't rebuild.
-- Keep the branded splash (≥ 3 s). The logo is Kevin's artwork (original at `C:\PR FORGE\assets\pr-forge-logo.png`; sized copies in `icons/`). Never invent or redraw one.
+- Keep the branded splash (≥ 3 s). The logo is Kevin's artwork (original at `C:\PR FORGE\assets\pr-forge-logo.png`; sized copies in `icons/`). Never invent or redraw one. The splash uses `icons/splash-logo.png`: the badge's mark and lettering with the dark badge background made transparent (pixels unchanged, made from `icons/logo.png`), so no square shows on the launch screen.
 - Exercise library: much bigger. Uses free-exercise-db (800+), factual fields only (name, muscles, equipment), no images or instructions.
 - Notes / RPE: probably yes, optional (off until enabled). Not confirmed.
 - Old workouts: from **Fitbod**. The CSV import is built from the column layout in a public converter, not yet checked against a real export from Kevin. The `multiplier` column is ignored because its meaning is unconfirmed.

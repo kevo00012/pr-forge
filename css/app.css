@@ -60,7 +60,7 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
   transition: opacity .4s ease;
 }
 #splash.out { opacity: 0; pointer-events: none; }
-.splash-logo { width: 180px; height: 180px; object-fit: contain; border-radius: 17%; }
+.splash-logo { width: 200px; max-width: 60vw; height: auto; aspect-ratio: 466 / 370; } /* the logo's mark and lettering, cut from the badge so no square shows */
 .splash-logo + .wordmark { display: none; } /* the logo carries the name; the text is the fallback if it can't load */
 .wordmark { font-family: var(--cond); font-size: 56px; font-weight: 800; letter-spacing: .12em; line-height: 1; }
 .wordmark span { color: var(--accent); }

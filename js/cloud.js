@@ -25,6 +25,8 @@
   // storage. The app makes a one-time secret (nonce) and passes it in the return address; the sheet hands the
   // sign-in to the app through the database under that secret, and the app collects it when you come back.
   var RETURN_NONCE = (/[?&]h=([0-9a-f]{32,128})(?:&|$)/.exec(location.search) || [])[1] || '';
+  // Remembered at load: supabase-js clears the tokens from the address before our listener runs.
+  var WAS_RETURN = /[?&](code|error|h)=/.test(location.search) || /(access_token|error)=/.test(location.hash);
   var handingOff = false, handedOff = false, claimTimer = null, claiming = false;
   // Diagnostics (shown small on the sign-in screen): when this copy's storage began, and how the last sign-in went.
   var BORN_KEY = ST.KEY + ':born', LAST_KEY = ST.KEY + ':last-signin';
@@ -187,9 +189,10 @@
       noteSignIn('handed to the app');
       cleanUrl();
       if (hooks.onData) hooks.onData();
-    }, function () {
-      // The handover table isn't there (or the network failed): sign in right here, as before.
+    }, function (e) {
+      // The handover table isn't there (or the network failed): sign in right here, as before, and say why.
       handingOff = false;
+      noteSignIn('handover failed (' + String((e && (e.message || e.code)) || 'unknown error').slice(0, 120) + '), so it signed in here instead');
       adoptSession(s);
     });
   }
@@ -267,7 +270,7 @@
           if (s && RETURN_NONCE && !session && !handingOff && !handedOff && !(st && st.nonce === RETURN_NONCE)) handOff(s);
           else if (handingOff || handedOff) { /* the sheet is passing this sign-in to the app */ }
           else if (s && (!session || s.user.id !== session.user.id || event === 'SIGNED_IN')) {
-            if (isReturn()) noteSignIn(RETURN_NONCE ? 'finished here (same window)' : 'finished here, with no handover code in the address');
+            if (WAS_RETURN) noteSignIn(RETURN_NONCE ? 'finished here (same window)' : 'finished here, with no handover code in the address');
             adoptSession(s);
           }
           else if (s) session = s;
@@ -291,7 +294,9 @@
       var t = function (iso) { var d = new Date(iso); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); };
       var last = null; try { last = JSON.parse(localStorage.getItem(LAST_KEY) || 'null'); } catch (e) { /* ignore */ }
       var hasToken = false; try { hasToken = Object.keys(localStorage).some(function (k) { return /^sb-.*-auth-token$/.test(k); }); } catch (e) { /* ignore */ }
-      return 'This is ' + where() + '. Saved data here since ' + (born ? t(born.at) : 'unknown (storage blocked)') + '. ' +
+      var st = started();
+      return 'Shown as ' + where() + '. Saved data here since ' + (born ? t(born.at) : 'unknown (storage blocked)') + '. ' +
+        (st && st.nonce ? 'A sign-in was started here at ' + t(st.at) + '. ' : '') +
         (last ? 'Last sign-in here: ' + t(last.at) + ', ' + last.how + '.' : 'No sign-in has finished here.') +
         ' Google session stored: ' + (hasToken ? 'yes' : 'no') + '. Owner: ' + (meta.userId ? 'yes' : 'no') + '.';
     },

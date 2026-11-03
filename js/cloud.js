@@ -18,6 +18,34 @@
   var hooks = { getState: null, setState: null, onData: null, onStatus: null };
   var status = { state: 'idle', message: '' }; // idle | syncing | synced | offline | signin | error
   var running = false, again = false, timer = null, signingOut = false;
+  var restoring = false; // first download after signing in on this phone
+  var failure = '';      // why the last sign-in couldn't finish, shown on the sign-in screen
+  var STARTED_KEY = ST.KEY + ':signin-started';
+  function where() {
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+    return standalone ? 'the home-screen app' : 'the browser';
+  }
+  /** True when Google has just sent someone back (tokens or an error in the address). */
+  function isReturn() { return /[?&](code|error)=/.test(location.search) || /(access_token|error)=/.test(location.hash); }
+  function cleanUrl() {
+    if (isReturn()) {
+      try { history.replaceState(null, '', location.pathname); } catch (e) { /* ignore */ }
+    }
+  }
+  /** Google sent us back but no session came of it: stop waiting and say why. */
+  function signInFailed(err) {
+    if (session || !isReturn()) return;
+    var started = null;
+    try { started = JSON.parse(localStorage.getItem(STARTED_KEY) || 'null'); } catch (e) { /* ignore */ }
+    if (err && /fetch|network|load failed/i.test(String(err.message))) failure = 'Sign-in didn’t finish: couldn’t reach the sign-in server. Check your connection and try again.';
+    else if (err && err.message) failure = 'Sign-in didn’t finish: ' + err.message + '.';
+    else if (!started) failure = 'Sign-in started somewhere else, so it can’t finish in ' + where() + '. Tap Continue with Google again from here.';
+    else failure = 'Sign-in started in ' + started.where + ' and came back to ' + where() + ', but it couldn’t finish. Tap Continue with Google to try again.';
+    try { localStorage.removeItem(STARTED_KEY); } catch (e) { /* ignore */ }
+    cleanUrl();
+    if (hooks.onData) hooks.onData();
+  }
+  function doneRestoring() { if (restoring) { restoring = false; if (hooks.onData) hooks.onData(); } }
   var meta = loadMeta();
 
   function loadMeta() {
@@ -88,7 +116,7 @@
   function sync() {
     if (!client || !meta.userId || signingOut) return Promise.resolve();
     if (running) { again = true; return Promise.resolve(); }
-    if (!navigator.onLine) { setStatus('offline'); return Promise.resolve(); }
+    if (!navigator.onLine) { setStatus('offline'); doneRestoring(); return Promise.resolve(); }
     if (!session) {
       // e.g. the sign-in expired while offline: try to refresh it now that we're online.
       return client.auth.getSession().then(function (r) {
@@ -112,6 +140,7 @@
       else setStatus('error', err && err.message);
     }).then(function () {
       running = false;
+      doneRestoring();
       if (again) { again = false; schedule(500); }
     });
   }
@@ -135,10 +164,14 @@
     meta.userId = uid;
     meta.email = s.user.email || '';
     saveMeta();
-    if (/[?&](code|error)=/.test(location.search) || /access_token|error=/.test(location.hash)) {
-      try { history.replaceState(null, '', location.pathname); } catch (e) { /* ignore */ }
+    failure = '';
+    try { localStorage.removeItem(STARTED_KEY); } catch (e) { /* ignore */ }
+    cleanUrl();
+    if (first) {
+      restoring = true;
+      setTimeout(doneRestoring, 20000); // never leave someone on the loading screen
+      if (hooks.onData) hooks.onData();
     }
-    if (first && hooks.onData) hooks.onData();
     schedule(0);
   }
 
@@ -148,8 +181,18 @@
       hooks = h;
       if (!root.supabase || !root.supabase.createClient) { setStatus('error', 'Sign-in could not load.'); return; }
       client = root.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-        auth: { flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+        auth: {
+          // Implicit flow (Supabase's default): Google's reply carries the session itself, so it doesn't
+          // depend on a key saved before leaving, which iPhone Safari and home-screen apps can lose.
+          flowType: 'implicit', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true
+        }
       });
+      if (isReturn()) {
+        client.auth.initialize().then(function (r) {
+          setTimeout(function () { signInFailed(r && r.error); }, 500);
+        }, function (e) { signInFailed(e); });
+        setTimeout(function () { signInFailed(new Error('it took too long. Check your connection')); }, 20000);
+      }
       client.auth.onAuthStateChange(function (event, s) {
         // Supabase asks that no other Supabase calls run inside this callback.
         setTimeout(function () {
@@ -166,13 +209,18 @@
     /** Who this phone's data belongs to, or null if nobody has signed in. Works offline. */
     owner: function () { return meta.userId ? { userId: meta.userId, email: meta.email } : null; },
     /** True while a sign-in redirect is being finished. */
-    returningFromSignIn: function () { return /[?&]code=/.test(location.search); },
+    returningFromSignIn: function () { return isReturn() && !/error/.test(location.search + location.hash); },
+    /** True while the first download after signing in on this phone is running. */
+    restoring: function () { return restoring; },
     signInError: function () {
+      if (failure) return failure;
       var m = /[?&#]error_description=([^&]*)/.exec(location.search + location.hash);
-      return m ? decodeURIComponent(m[1].replace(/\+/g, ' ')) : '';
+      return m ? 'Sign-in didn’t work: ' + decodeURIComponent(m[1].replace(/\+/g, ' ')) + '. Try again.' : '';
     },
     signIn: function () {
       if (!client) return Promise.reject(new Error('Sign-in could not load. Check your connection and reload.'));
+      failure = '';
+      try { localStorage.setItem(STARTED_KEY, JSON.stringify({ at: new Date().toISOString(), where: where() })); } catch (e) { /* ignore */ }
       return client.auth.signInWithOAuth({
         provider: 'google',
         options: { redirectTo: location.origin + location.pathname }

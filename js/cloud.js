@@ -27,6 +27,10 @@
   var RETURN_NONCE = (/[?&]h=([0-9a-f]{32,128})(?:&|$)/.exec(location.search) || [])[1] || '';
   // Remembered at load: supabase-js clears the tokens from the address before our listener runs.
   var WAS_RETURN = /[?&](code|error|h)=/.test(location.search) || /(access_token|error)=/.test(location.hash);
+  // The address as it arrived, with values hidden (keys only), e.g. "/pr-forge/?h=… #access_token,expires_in,…".
+  var ARRIVED = location.pathname + (location.search ? '?' + location.search.slice(1).split('&').map(function (kv) {
+    var k = kv.split('=')[0]; return k === 'h' ? 'h=' + (kv.split('=')[1] || '').slice(0, 6) + '…' : k;
+  }).join('&') : '') + (location.hash ? ' #' + location.hash.slice(1).split('&').map(function (kv) { return kv.split('=')[0]; }).join(',') : '');
   var handingOff = false, handedOff = false, claimTimer = null, claiming = false;
   // Diagnostics (shown small on the sign-in screen): when this copy's storage began, and how the last sign-in went.
   var BORN_KEY = ST.KEY + ':born', LAST_KEY = ST.KEY + ':last-signin';
@@ -36,7 +40,7 @@
     if (!born) { born = { at: new Date().toISOString(), where: where() }; localStorage.setItem(BORN_KEY, JSON.stringify(born)); }
   } catch (e) { born = null; }
   function noteSignIn(how) {
-    try { localStorage.setItem(LAST_KEY, JSON.stringify({ at: new Date().toISOString(), where: where(), how: how, code: !!RETURN_NONCE })); } catch (e) { /* ignore */ }
+    try { localStorage.setItem(LAST_KEY, JSON.stringify({ at: new Date().toISOString(), where: where(), how: how, code: !!RETURN_NONCE, arrived: ARRIVED, ref: String(document.referrer || '').replace(/[?#].*$/, '').slice(0, 80) })); } catch (e) { /* ignore */ }
   }
   function started() { try { return JSON.parse(localStorage.getItem(STARTED_KEY) || 'null'); } catch (e) { return null; } }
   function newNonce() {
@@ -296,8 +300,8 @@
       var hasToken = false; try { hasToken = Object.keys(localStorage).some(function (k) { return /^sb-.*-auth-token$/.test(k); }); } catch (e) { /* ignore */ }
       var st = started();
       return 'Shown as ' + where() + '. Saved data here since ' + (born ? t(born.at) : 'unknown (storage blocked)') + '. ' +
-        (st && st.nonce ? 'A sign-in was started here at ' + t(st.at) + '. ' : '') +
-        (last ? 'Last sign-in here: ' + t(last.at) + ', ' + last.how + '.' : 'No sign-in has finished here.') +
+        (st && st.nonce ? 'A sign-in was started here at ' + t(st.at) + ' with code ' + st.nonce.slice(0, 6) + '…' + (st.to ? ', return address ' + st.to : '') + '. ' : '') +
+        (last ? 'Last sign-in here: ' + t(last.at) + ', ' + last.how + '. Address it came back to: ' + (last.arrived || '?') + (last.ref ? ' (from ' + last.ref + ')' : '') + '.' : 'No sign-in has finished here.') +
         ' Google session stored: ' + (hasToken ? 'yes' : 'no') + '. Owner: ' + (meta.userId ? 'yes' : 'no') + '.';
     },
     /** True in the browser sheet after it has handed the sign-in to the app. */
@@ -315,11 +319,12 @@
       if (!client) return Promise.reject(new Error('Sign-in could not load. Check your connection and reload.'));
       failure = '';
       var nonce = newNonce();
-      try { localStorage.setItem(STARTED_KEY, JSON.stringify({ at: new Date().toISOString(), where: where(), nonce: nonce })); } catch (e) { /* ignore */ }
+      var back = location.origin + location.pathname + '?h=' + nonce;
+      try { localStorage.setItem(STARTED_KEY, JSON.stringify({ at: new Date().toISOString(), where: where(), nonce: nonce, to: location.pathname + '?h=…' })); } catch (e) { /* ignore */ }
       startClaiming();
       return client.auth.signInWithOAuth({
         provider: 'google',
-        options: { redirectTo: location.origin + location.pathname + '?h=' + nonce }
+        options: { redirectTo: back }
       }).then(function (res) { if (res.error) throw res.error; });
     },
     /** Signs out and removes this phone's copy (the cloud copy stays). */

@@ -382,3 +382,59 @@ test('store: round trip, rejects foreign files, survives corrupt storage', () =>
   assert.equal(fresh.workouts.length, 0);
   assert.ok(Object.keys(mem.data).some(k => k.includes(':unreadable:')));
 });
+
+test('pasted workout plan: Claude-style list, abbreviations, tables, several days', () => {
+  const text = [
+    '# Upper Body Workout', '', "Here's a solid session:", '**Warm-up:** 5 minutes rowing, arm circles', '',
+    '1. **Barbell Bench Press** — 4 sets x 6-8 reps', '2. Bent-Over Barbell Rows: 4 x 8', '3. DB Lateral Raises 3x12-15',
+    '4. Pull-ups 3 x AMRAP', '5. Tricep Rope Pushdowns 3 × 12', '6. Dumbbell Bicep Curls - 3 sets, 10-12 reps', '7. Zercher Wiggle 2x5',
+    'Rest 60–90 seconds between sets.', '',
+    'Day 2: Lower', '| Exercise | Sets | Reps |', '|---|---|---|', '| Back Squat | 5 | 5 |', '| Romanian Deadlift | 3 | 8 |'
+  ].join('\n');
+  const r = importers.parseWorkoutText(text, { exercises: ex.BUILT_IN });
+  assert.equal(r.workouts.length, 2);
+  const [up, low] = r.workouts;
+  assert.equal(up.name, 'Upper Body Workout');
+  assert.deepEqual(up.exercises.map((e) => [e.exerciseId, e.sets, e.reps]), [
+    ['bench-press', 4, '6-8'], ['barbell-row', 4, '8'], ['lateral-raise', 3, '12-15'], ['pull-up', 3, 'AMRAP'],
+    ['rope-pushdown', 3, '12'], ['db-curl', 3, '10-12'], [null, 2, '5']
+  ]);
+  assert.equal(up.exercises[6].name, 'Zercher Wiggle'); // unknown: kept by name, becomes a custom exercise
+  assert.equal(low.name, 'Lower');
+  assert.deepEqual(low.exercises.map((e) => [e.exerciseId, e.sets]), [['back-squat', 5], ['romanian-deadlift', 3]]);
+  assert.equal(r.skipped.length, 2); // warm-up note and rest note
+});
+
+test('pasted workout plan: bare names get 3 sets, sets are clamped, nothing usable gives no workouts', () => {
+  const r = importers.parseWorkoutText('Push\nBench Press\nDips 40x10\n', { exercises: ex.BUILT_IN });
+  assert.equal(r.workouts[0].name, 'Push');
+  assert.deepEqual(r.workouts[0].exercises.map((e) => [e.exerciseId, e.sets]), [['bench-press', 3], ['dip', 20]]);
+  assert.equal(importers.parseWorkoutText('Just stretch and rest today.', { exercises: ex.BUILT_IN }).workouts.length, 0);
+});
+
+test('workout files: PDF text items rebuild lines and table columns; CSV becomes table rows', () => {
+  const it = (s, x, y, w) => ({ str: s, transform: [10, 0, 0, 10, x, y], width: w, height: 10 });
+  const text = importers.pdfItemsToText([
+    it('Upper', 50, 700, 30), it('Body', 83, 700, 25),
+    it('Bench Press', 50, 680, 60), it('4', 200, 680, 5), it('8', 260, 680, 5),
+    it('Pull-ups', 50, 660, 40), it('3', 200, 661, 5), it('AMRAP', 260, 660, 30)
+  ]);
+  assert.equal(text, 'Upper Body\nBench Press | 4 | 8\nPull-ups | 3 | AMRAP');
+  const plan = importers.parseWorkoutText(text, { exercises: ex.BUILT_IN });
+  assert.equal(plan.workouts[0].name, 'Upper Body');
+  assert.deepEqual(plan.workouts[0].exercises.map((e) => [e.exerciseId, e.sets]), [['bench-press', 4], ['pull-up', 3]]);
+
+  const csv = importers.csvToPlanText('Exercise,Sets,Reps\nBack Squat,5,5\nLeg Press,3,12\n');
+  assert.deepEqual(importers.parseWorkoutText(csv, { exercises: ex.BUILT_IN }).workouts[0].exercises.map((e) => [e.exerciseId, e.sets, e.reps]),
+    [['back-squat', 5, '5'], ['leg-press', 3, '12']]);
+  assert.throws(() => importers.csvToPlanText(FITBOD), /Fitbod/);
+});
+
+test('workout CSV: columns found by name in any order, a Workout/Day column splits workouts', () => {
+  const plan = (csv) => importers.parseWorkoutText(importers.csvToPlanText(csv), { exercises: ex.BUILT_IN }).workouts
+    .map((w) => [w.name, w.exercises.map((e) => [e.exerciseId, e.sets, e.reps])]);
+  assert.deepEqual(plan('Workout,Exercise,Sets,Reps\nUpper,Bench Press,4,6-8\nUpper,Pull-ups,3,AMRAP\nLower,Back Squat,5,5\n'),
+    [['Upper', [['bench-press', 4, '6-8'], ['pull-up', 3, 'AMRAP']]], ['Lower', [['back-squat', 5, '5']]]]);
+  assert.deepEqual(plan('Day,Name,Reps,Sets,Rest\n1,Overhead press,8,3,90s\n2,Deadlift,5,1,3 min\n'),
+    [['Day 1', [['overhead-press', 3, '8']]], ['Day 2', [['deadlift', 1, '5']]]]);
+});

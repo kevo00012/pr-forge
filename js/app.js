@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '1.5.3';
+  var VERSION = '1.5.4';
 
   var S = ST.load();
   var V = {
@@ -104,6 +104,7 @@
     down: '<path d="M6 10l6 6 6-6"/>',
     back: '<path d="M15 5l-7 7 7 7"/>',
     arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
+    settings: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
     trophy: '<path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8.5 20h7M10 17h4"/>'
   };
   function icon(name, cls) {
@@ -312,6 +313,7 @@
     else if (V.screen === 'editWorkout' && V.edit) body = viewEditWorkout();
     else if (V.screen === 'lift' && V.liftId) body = viewLift();
     else if (V.screen === 'historyDetail' && findWorkout(V.historyId)) body = viewHistoryDetail();
+    else if (V.screen === 'settings') body = viewSettings();
     else {
       V.screen = null;
       body = ({ home: viewHome, workouts: viewWorkouts, progress: viewProgress, history: viewHistory })[V.tab]();
@@ -416,7 +418,7 @@
       '</section>';
 
     return '<header class="top row end"><div class="top"><p class="eyebrow">' + now.toLocaleDateString('en-US', { weekday: 'long' }) + ' · ' + now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + '</p><h1>Today</h1></div>' +
-      '<img class="wordmark-img" src="icons/wordmark.png" width="136" height="16" alt="PR Forge"></header>' +
+      '<div class="top-tools"><img class="wordmark-img" src="icons/wordmark.png" width="136" height="16" alt="PR Forge">' + settingsButton() + '</div></header>' +
       '<section class="week-wrap" aria-label="This week"><div class="week">' + strip + '</div><p class="week-line">' + weekLine + '</p></section>' +
       upNext + highlights;
   }
@@ -438,8 +440,9 @@
     if (!list) {
       list = '<section class="card empty"><p>No saved workouts yet.</p><p class="muted small">A saved workout is a list of exercises and how many sets you do of each. Starting one fills in last time’s numbers as hints.</p></section>';
     }
-    return '<header class="top row"><h1>Workouts</h1><button class="btn primary sm" data-act="template-new">' + icon('plus', 'sm') + 'New</button></header>' +
-      list + '<button class="btn ghost block" data-act="start-empty">Start an empty workout</button>';
+    var copy = '<button class="btn ghost block" data-act="plan-paste">Paste a workout</button>';
+    return '<header class="top row"><h1>Workouts</h1><div class="top-tools"><button class="btn primary sm" data-act="template-new">' + icon('plus', 'sm') + 'New</button>' + settingsButton() + '</div></header>' +
+      list + copy + '<button class="btn ghost block" data-act="start-empty">Start an empty workout</button>';
   }
 
   function viewTemplateEditor() {
@@ -642,29 +645,42 @@
         '<span class="muted small">' + heavy + r.sessions + ' session' + (r.sessions === 1 ? '' : 's') + '</span></li>';
     }).join('') : '<li class="muted small">No records yet.</li>';
 
-    var rest = S.settings.restSeconds;
-    var restChips = [[0, 'Off'], [60, '1:00'], [90, '1:30'], [120, '2:00'], [180, '3:00']].map(function (r) {
-      return '<button class="chip' + (rest === r[0] ? ' on' : '') + '" data-act="set-rest" data-v="' + r[0] + '">' + r[1] + '</button>';
-    }).join('');
-
-    return '<header class="top"><h1>Progress</h1></header>' +
+    return '<header class="top row"><h1>Progress</h1>' + settingsButton() + '</header>' +
       ledeHtml + weeklyChart() + trendHtml +
       '<details class="how"><summary>How trends are worked out</summary><p class="muted small">Each session’s best set is turned into an estimated one-rep max: weight × (1 + reps ÷ 30). Lifts without weight use your most reps or longest hold instead. ' +
       '<b>Progressing</b> = a new best within your last 3 sessions of that lift. <b>Holding</b> = 3–4 sessions since the best. <b>Stalled</b> = 5 or more. ' +
       '<b>Down</b> = your last 2 sessions were over 5% under your best of the 6 weeks before them. <b>Paused</b> = no session in 14 days or more. ' +
       'Warm-ups don’t count, and assisted lifts have no trend. Only lifts trained in the last 8 weeks are shown.</p></details>' +
       '<section class="card"><h2 class="card-title">Personal records</h2><ul class="prs">' + prHtml + '</ul></section>' +
-      '<section class="card"><h2 class="card-title">Settings &amp; data</h2>' + accountHtml() +
-      '<div class="setting"><span>Units</span><div class="seg"><button class="' + (unit() === 'lb' ? 'on' : '') + '" data-act="set-unit" data-v="lb">lb</button>' +
-      '<button class="' + (unit() === 'kg' ? 'on' : '') + '" data-act="set-unit" data-v="kg">kg</button></div></div>' +
+      '<button class="btn ghost block" data-act="settings-open">' + icon('settings', 'sm') + 'Settings, import &amp; backup</button>';
+  }
+
+  // ----- Settings (gear icon in the top-right of each tab) -----
+  function settingsButton() {
+    return '<button class="icon-btn boxed" data-act="settings-open" aria-label="Settings">' + icon('settings') + '</button>';
+  }
+  function viewSettings() {
+    var rest = S.settings.restSeconds;
+    var restChips = [[0, 'Off'], [60, '1:00'], [90, '1:30'], [120, '2:00'], [180, '3:00']].map(function (r) {
+      return '<button class="chip' + (rest === r[0] ? ' on' : '') + '" data-act="set-rest" data-v="' + r[0] + '" aria-pressed="' + (rest === r[0]) + '">' + r[1] + '</button>';
+    }).join('');
+    var acct = accountHtml();
+    return '<header class="top row"><button class="btn ghost sm" data-act="settings-back">' + icon('back', 'sm') + 'Back</button><span></span></header>' +
+      '<header class="top"><h1>Settings</h1></header>' +
+      (acct ? '<section class="card">' + acct + '</section>' : '') +
+      '<section class="card"><h2 class="card-title">Logging</h2>' +
+      '<div class="setting"><span>Units</span><div class="seg"><button class="' + (unit() === 'lb' ? 'on' : '') + '" data-act="set-unit" data-v="lb" aria-pressed="' + (unit() === 'lb') + '">lb</button>' +
+      '<button class="' + (unit() === 'kg' ? 'on' : '') + '" data-act="set-unit" data-v="kg" aria-pressed="' + (unit() === 'kg') + '">kg</button></div></div>' +
       '<div class="setting col"><span>Rest timer after each set</span><div class="chips">' + restChips + '</div></div>' +
-      '<label class="setting"><span>Bar weight (' + unit() + ')</span><input class="bar-input" data-field="bar" inputmode="decimal" autocomplete="off" value="' + U.fmtNum(barFor(unit())) + '"></label>' +
-      '<div class="setting col"><span>Import from Fitbod</span><p class="muted small">Export your workouts from Fitbod’s settings as a CSV file, then choose it here. Imported workouts never count as PRs, but later sessions have to beat them.</p>' +
-      '<button class="btn ghost block" data-act="fitbod-pick">Choose Fitbod file</button>' + importsHtml() + '</div>' +
-      '<div class="setting col"><span>Backup file</span><p class="muted small">Your workouts back up to your account automatically. You can also save a copy as a file, or restore one (this replaces everything, here and in your account).</p>' +
-      '<div class="row-2"><button class="btn ghost" data-act="export">Export backup</button><button class="btn ghost" data-act="import">Restore backup</button></div></div>' +
+      '<label class="setting"><span>Bar weight (' + unit() + ')</span><input class="bar-input" data-field="bar" inputmode="decimal" autocomplete="off" value="' + U.fmtNum(barFor(unit())) + '"></label></section>' +
+      '<section class="card"><h2 class="card-title">Import from Fitbod</h2>' +
+      '<p class="muted small">Export your workouts from Fitbod’s settings as a CSV file, then choose it here. Imported workouts never count as PRs, but later sessions have to beat them. To turn one into a saved workout, open it in History and tap Save as a workout.</p>' +
+      '<button class="btn ghost block" data-act="fitbod-pick">Choose Fitbod file</button>' + importsHtml() + '</section>' +
+      '<section class="card"><h2 class="card-title">Backup file</h2>' +
+      '<p class="muted small">Your workouts back up to your account automatically. You can also save a copy as a file, or restore one (this replaces everything, here and in your account).</p>' +
+      '<div class="row-2"><button class="btn ghost" data-act="export">Export backup</button><button class="btn ghost" data-act="import">Restore backup</button></div></section>' +
       '<button class="btn danger-ghost block" data-act="erase-all">Erase all my data</button>' +
-      '<p class="muted small center">PR Forge web ' + VERSION + ' · ' + S.workouts.length + ' workouts saved</p></section>' +
+      '<p class="muted small center">PR Forge web ' + VERSION + ' · ' + S.workouts.length + ' workouts saved · <a href="privacy.html">Privacy</a></p>' +
       fileInputs();
   }
   function fileInputs() {
@@ -816,7 +832,7 @@
     if (el) el.textContent = syncText();
     var need = CLOUD.status().state === 'signin';
     var btn = document.querySelector('.setting [data-act="sign-in"]');
-    if (need !== !!btn && V.tab === 'progress' && !V.screen) render();
+    if (need !== !!btn && V.screen === 'settings') render();
   }
 
   // ----- First open -----
@@ -911,7 +927,7 @@
   function viewHistory() {
     var list = M.finished(S.workouts).slice().reverse();
     if (!list.length) {
-      return '<header class="top"><h1>History</h1></header><section class="card empty"><p>No finished workouts yet.</p><p class="muted small">Workouts show up here when you tap Finish.</p></section>';
+      return '<header class="top row"><h1>History</h1>' + settingsButton() + '</header><section class="card empty"><p>No finished workouts yet.</p><p class="muted small">Workouts show up here when you tap Finish.</p></section>';
     }
     var prCount = {};
     M.prEvents(S.workouts).forEach(function (e) { prCount[e.workoutId] = (prCount[e.workoutId] || 0) + 1; });
@@ -928,7 +944,7 @@
         (prCount[wk.id] ? '<span class="pr-badge">' + icon('trophy', 'sm') + prCount[wk.id] + ' PR' + (prCount[wk.id] === 1 ? '' : 's') + '</span>' : '') +
         '</button>';
     });
-    return '<header class="top"><h1>History</h1></header>' + html;
+    return '<header class="top row"><h1>History</h1>' + settingsButton() + '</header>' + html;
   }
 
   function viewHistoryDetail() {
@@ -1288,6 +1304,95 @@
     reader.onerror = function () { toast('Couldn’t read that file', 'warn'); };
     reader.readAsText(file);
   }
+  // ----- Paste a workout (e.g. one Claude wrote) -----
+  function pastePlanForm(text) {
+    openModal('<h2>Paste a workout</h2>' +
+      '<p class="muted small">Paste a workout plan, for example one Claude wrote for you. One exercise per line works best, like “Bench press 4x8”. A short line above the exercises becomes the workout’s name; paste several days at once and each becomes its own workout.</p>' +
+      '<label class="field"><span>Workout plan</span><textarea id="plan-text" rows="9" placeholder="Upper body&#10;Bench press 4x8&#10;Bent-over row 4x8&#10;Overhead press 3x10&#10;Pull-ups 3xAMRAP"></textarea></label>' +
+      '<div class="row-2"><button class="btn ghost sm" data-act="plan-file-pick">Choose a file</button><button class="btn ghost sm" data-act="plan-copy-tip">Tip for Claude</button></div>' +
+      '<p class="muted small">Files: PDF, text (.txt, .md) or CSV. A CSV needs an Exercise column; Sets, Reps and a Workout or Day column are optional. For a photo or a Word file, copy the text and paste it here.</p>' +
+      '<input type="file" id="plan-file" accept=".pdf,.txt,.text,.md,.markdown,.csv,application/pdf,text/plain,text/markdown,text/csv" hidden>' +
+      '<div class="modal-actions"><button class="btn ghost" data-act="modal-cancel">Cancel</button><button class="btn primary" data-act="plan-preview">Preview</button></div>');
+    var ta = document.getElementById('plan-text');
+    if (ta) { ta.value = text; setTimeout(function () { ta.focus(); }, 30); }
+  }
+  /** Reads a PDF, text or CSV file into the paste box, then shows the preview. */
+  function loadPlanFile(file) {
+    var name = String(file.name || '').toLowerCase();
+    V.planFileName = String(file.name || '').replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim().slice(0, 60);
+    var type = String(file.type || '');
+    var box = document.getElementById('plan-text');
+    var fill = function (text) {
+      text = String(text || '').trim();
+      if (!text) { toast('No text found in that file. If it’s a scan or photo, type or paste the workout instead.', 'warn', 4500); return; }
+      if (box) box.value = text;
+      var go = document.querySelector('[data-act="plan-preview"]');
+      if (go) go.click();
+    };
+    if (/\.pdf$/.test(name) || type === 'application/pdf') {
+      toast('Reading the PDF…', '', 2000);
+      readPdfText(file).then(fill, function (e) {
+        try { console.warn('PDF read failed', e); } catch (e2) { /* ignore */ }
+        toast(navigator.onLine ? 'Couldn’t read that PDF. Copy its text and paste it instead.' : 'Reading a PDF needs a connection the first time. Try again when you’re online.', 'warn', 4500);
+      });
+      return;
+    }
+    if (/\.(docx?|pages|rtf)$/.test(name)) { toast('Word and Pages files can’t be read here. Copy the text and paste it instead.', 'warn', 4500); return; }
+    if (/^image\//.test(type) || /\.(jpe?g|png|heic|webp|gif)$/.test(name)) { toast('Photos can’t be read here. Type or paste the workout instead.', 'warn', 4500); return; }
+    var reader = new FileReader();
+    reader.onload = function () {
+      var text = String(reader.result || '');
+      if (/\.csv$/.test(name) || type === 'text/csv') {
+        try { text = IM.csvToPlanText(text); } catch (e) { toast(esc(e.message), 'warn', 4500); return; }
+      }
+      fill(text);
+    };
+    reader.onerror = function () { toast('Couldn’t read that file', 'warn'); };
+    reader.readAsText(file);
+  }
+  /** Text of a PDF's first 20 pages via PDF.js, which is only downloaded the first time a PDF is opened. */
+  var pdfLib = null;
+  function readPdfText(file) {
+    var base = new URL('js/vendor/pdfjs/', document.baseURI).href;
+    pdfLib = pdfLib || import(base + 'pdf.min.js').then(function (lib) {
+      lib.GlobalWorkerOptions.workerSrc = base + 'pdf.worker.min.js';
+      return lib;
+    });
+    return Promise.all([pdfLib, file.arrayBuffer()]).then(function (r) {
+      return r[0].getDocument({ data: new Uint8Array(r[1]), isEvalSupported: false }).promise;
+    }).then(function (doc) {
+      var pages = [];
+      for (var i = 1; i <= Math.min(doc.numPages, 20); i++) pages.push(i);
+      return pages.reduce(function (p, n) {
+        return p.then(function (acc) {
+          return doc.getPage(n).then(function (page) { return page.getTextContent(); }).then(function (tc) { return acc.concat([IM.pdfItemsToText(tc.items)]); });
+        });
+      }, Promise.resolve([])).then(function (texts) { try { (doc.destroy || doc.cleanup || function () {}).call(doc); } catch (e) { /* ignore */ } return texts.join('\n'); });
+    }).catch(function (e) { pdfLib = null; throw e; }); // let the next try download PDF.js again
+  }
+  function planPreview(res) {
+    var html = res.workouts.map(function (w, wi) {
+      return '<section class="paste-wk"><h3>' + esc(w.name || 'Workout ' + (S.templates.length + wi + 1)) + '</h3><ul class="paste-list">' + w.exercises.map(function (e) {
+        var known = e.exerciseId ? exById(e.exerciseId) : null;
+        return '<li><span class="paste-name"><strong>' + esc(known ? known.name : e.name) + '</strong>' +
+          (known ? '' : '<span class="muted small">New exercise, added to your list</span>') + '</span>' +
+          '<span class="paste-sets">' + e.sets + (e.reps ? ' × ' + esc(e.reps) : ' sets') + '</span></li>';
+      }).join('') + '</ul></section>';
+    }).join('');
+    var n = res.workouts.length;
+    openModal('<h2>' + (n === 1 ? 'Save this workout?' : 'Save ' + n + ' workouts?') + '</h2>' + html +
+      (res.skipped.length ? '<p class="muted small">Left out ' + (res.skipped.length === 1 ? '1 line that isn’t an exercise' : res.skipped.length + ' lines that aren’t exercises, such as') + ': “' + esc(res.skipped[0].slice(0, 60)) + '”.</p>' : '') +
+      '<p class="muted small">Sets are saved; rep targets aren’t kept yet, and last time’s numbers fill in as hints when you start. You can edit everything afterwards.</p>' +
+      '<div class="modal-actions"><button class="btn ghost" data-act="plan-back">Back</button><button class="btn primary" data-act="plan-save">Save</button></div>');
+  }
+
+  /** Opens the saved-workout editor pre-filled from a finished workout. */
+  function draftFromWorkout(wk) {
+    V.tplDraft = { id: null, name: wk.imported && wk.name === 'Fitbod workout' ? '' : wk.name, exercises: wk.exercises.map(function (e) {
+      return { exerciseId: e.exerciseId, sets: Math.min(20, Math.max(1, e.sets.filter(function (s) { return !s.warmup; }).length)) };
+    }) };
+    V.screen = 'template'; render();
+  }
   function importSummary(result) {
     var st = result.stats;
     var range = shortDate(result.workouts[0].startedAt) + ' ' + new Date(result.workouts[0].startedAt).getFullYear() + ' to ' +
@@ -1591,11 +1696,54 @@
     'history-to-template': function () {
       var wk = findWorkout(V.historyId); if (!wk) return;
       V.summary = null;
-      V.tplDraft = { id: null, name: wk.name, exercises: wk.exercises.map(function (e) {
-        return { exerciseId: e.exerciseId, sets: Math.max(1, e.sets.filter(function (s) { return !s.warmup; }).length) };
-      }) };
-      V.screen = 'template'; render();
+      draftFromWorkout(wk);
     },
+    'plan-paste': function () { V.planFileName = ''; pastePlanForm(V.planText || ''); },
+    'plan-copy-tip': function () {
+      var tip = 'Write it as a plain list, one exercise per line, like "Bench press 4x8". Put the workout name on its own line above.';
+      var done = function () { toast('Copied. Paste it after your request to Claude'); };
+      try { navigator.clipboard.writeText(tip).then(done, function () { toast(tip, '', 6000); }); } catch (e) { toast(tip, '', 6000); }
+    },
+    'plan-file-pick': function () { var f = document.getElementById('plan-file'); if (f) { f.value = ''; f.click(); } },
+    'plan-preview': function () {
+      var el = document.getElementById('plan-text');
+      V.planText = el ? el.value : '';
+      var res = IM.parseWorkoutText(V.planText, { exercises: allExercises() });
+      if (!res.workouts.length) { toast('No exercises found. Put one per line, like “Bench press 4x8”.', 'warn', 4000); return; }
+      if (V.planFileName && !res.workouts[0].name) res.workouts[0].name = V.planFileName; // a file with no title line: use its name
+      V.planParsed = res;
+      closeModal();
+      planPreview(res);
+    },
+    'plan-back': function () { closeModal(); pastePlanForm(V.planText || ''); },
+    'plan-save': function () {
+      var res = V.planParsed; if (!res) return;
+      var made = {}, saved = [];
+      res.workouts.forEach(function (w, wi) {
+        var t = { id: 't-' + uid(), name: (w.name || 'Workout ' + (S.templates.length + 1)).slice(0, 60), exercises: [] };
+        w.exercises.forEach(function (e) {
+          var id = e.exerciseId;
+          if (!id) {
+            var key = e.name.toLowerCase();
+            if (!made[key]) {
+              made[key] = { id: 'c-' + uid(), name: e.name, muscle: 'Other', equipment: 'Other',
+                side: /\b(one|single)[- ]arm/i.test(e.name) ? 'arm' : /\b(one|single)[- ]leg|lunge|split squat|step[- ]?up/i.test(e.name) ? 'leg' : '', custom: true };
+              S.customExercises.push(made[key]);
+            }
+            id = made[key].id;
+          }
+          t.exercises.push({ exerciseId: id, sets: e.sets });
+        });
+        S.templates.push(t); saved.push(t);
+      });
+      V.planText = ''; V.planParsed = null;
+      closeModal();
+      V.tab = 'workouts'; V.screen = null;
+      commit();
+      toast(saved.length === 1 ? 'Saved “' + esc(saved[0].name) + '”' : 'Saved ' + saved.length + ' workouts');
+    },
+    'settings-open': function () { V.screen = 'settings'; V.picker = null; render(); },
+    'settings-back': function () { V.screen = null; render(); },
 
     'set-unit': function (el) {
       S.settings.unit = el.dataset.v === 'kg' ? 'kg' : 'lb'; commit();
@@ -1661,6 +1809,7 @@
     var el = ev.target;
     if (el.id === 'import-file' && el.files && el.files[0]) importBackup(el.files[0]);
     if (el.id === 'fitbod-file' && el.files && el.files[0]) importFitbod(el.files[0]);
+    if (el.id === 'plan-file' && el.files && el.files[0]) loadPlanFile(el.files[0]);
   });
   document.addEventListener('keydown', function (ev) {
     if (ev.key === 'Escape') {

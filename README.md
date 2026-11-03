@@ -37,7 +37,7 @@ Run `node tools/serve.js` and open http://localhost:8000/. Google sign-in needs 
 
 ### Updating later
 
-Upload the changed files to the repo again (same "Add file → Upload files" button, then commit). Before uploading, bump the version in `sw.js` (`CACHE = 'pr-forge-web-1.5.3'`) so phones fetch the new files.
+Upload the changed files to the repo again (same "Add file → Upload files" button, then commit). Before uploading, bump the version in `sw.js` (`CACHE = 'pr-forge-web-1.5.4'`) so phones fetch the new files.
 
 ## Your data
 
@@ -59,7 +59,7 @@ The `icons` folder holds the logo, cropped to its badge and resized from the ori
 
 ## For developers
 
-- Plain HTML/CSS/JavaScript, no build step. One dependency: supabase-js 2.118.0 (MIT), bundled as `js/vendor/supabase.js` (the package's UMD build; licence in `js/vendor/supabase.LICENSE`) so it works offline.
+- Plain HTML/CSS/JavaScript, no build step. One dependency: supabase-js 2.118.0 (MIT), bundled as `js/vendor/supabase.js` (the package's UMD build; licence in `js/vendor/supabase.LICENSE`) so it works offline. PDF.js (pdfjs-dist 6.4.299 legacy build, Apache-2.0, licence in `js/vendor/pdfjs/LICENSE`) is in `js/vendor/pdfjs/`, loaded only when someone opens a PDF in Paste a workout.
 - `js/units.js`, `js/metrics.js`, `js/store.js`, `js/plates.js`, `js/importers.js`, `js/sync.js` and `js/exercises.js` are pure logic. `js/cloud.js` handles Google sign-in and talks to Supabase. `js/app.js` is the UI.
 - Tests: open a terminal in this folder and run `node --test` (needs Node 20+).
 - Exercise list: `js/exercise-library.js` is generated from [free-exercise-db](https://github.com/yuhonas/free-exercise-db) (Unlicense) by `node tools/build-exercises.js path/to/exercises.json`. Only names, muscles and equipment are kept. Per-arm and per-leg labels are worked out from exercise names.

@@ -1309,10 +1309,66 @@
     openModal('<h2>Paste a workout</h2>' +
       '<p class="muted small">Paste a workout plan, for example one Claude wrote for you. One exercise per line works best, like “Bench press 4x8”. A short line above the exercises becomes the workout’s name; paste several days at once and each becomes its own workout.</p>' +
       '<label class="field"><span>Workout plan</span><textarea id="plan-text" rows="9" placeholder="Upper body&#10;Bench press 4x8&#10;Bent-over row 4x8&#10;Overhead press 3x10&#10;Pull-ups 3xAMRAP"></textarea></label>' +
-      '<button class="btn ghost sm" data-act="plan-copy-tip">Copy a tip to give Claude</button>' +
+      '<div class="row-2"><button class="btn ghost sm" data-act="plan-file-pick">Choose a file</button><button class="btn ghost sm" data-act="plan-copy-tip">Tip for Claude</button></div>' +
+      '<p class="muted small">Files: PDF, text (.txt, .md) or CSV. For a photo or a Word file, copy the text and paste it here.</p>' +
+      '<input type="file" id="plan-file" accept=".pdf,.txt,.text,.md,.markdown,.csv,application/pdf,text/plain,text/markdown,text/csv" hidden>' +
       '<div class="modal-actions"><button class="btn ghost" data-act="modal-cancel">Cancel</button><button class="btn primary" data-act="plan-preview">Preview</button></div>');
     var ta = document.getElementById('plan-text');
     if (ta) { ta.value = text; setTimeout(function () { ta.focus(); }, 30); }
+  }
+  /** Reads a PDF, text or CSV file into the paste box, then shows the preview. */
+  function loadPlanFile(file) {
+    var name = String(file.name || '').toLowerCase();
+    V.planFileName = String(file.name || '').replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim().slice(0, 60);
+    var type = String(file.type || '');
+    var box = document.getElementById('plan-text');
+    var fill = function (text) {
+      text = String(text || '').trim();
+      if (!text) { toast('No text found in that file. If it’s a scan or photo, type or paste the workout instead.', 'warn', 4500); return; }
+      if (box) box.value = text;
+      var go = document.querySelector('[data-act="plan-preview"]');
+      if (go) go.click();
+    };
+    if (/\.pdf$/.test(name) || type === 'application/pdf') {
+      toast('Reading the PDF…', '', 2000);
+      readPdfText(file).then(fill, function (e) {
+        try { console.warn('PDF read failed', e); } catch (e2) { /* ignore */ }
+        toast(navigator.onLine ? 'Couldn’t read that PDF. Copy its text and paste it instead.' : 'Reading a PDF needs a connection the first time. Try again when you’re online.', 'warn', 4500);
+      });
+      return;
+    }
+    if (/\.(docx?|pages|rtf)$/.test(name)) { toast('Word and Pages files can’t be read here. Copy the text and paste it instead.', 'warn', 4500); return; }
+    if (/^image\//.test(type) || /\.(jpe?g|png|heic|webp|gif)$/.test(name)) { toast('Photos can’t be read here. Type or paste the workout instead.', 'warn', 4500); return; }
+    var reader = new FileReader();
+    reader.onload = function () {
+      var text = String(reader.result || '');
+      if (/\.csv$/.test(name) || type === 'text/csv') {
+        try { text = IM.csvToPlanText(text); } catch (e) { toast(esc(e.message), 'warn', 4500); return; }
+      }
+      fill(text);
+    };
+    reader.onerror = function () { toast('Couldn’t read that file', 'warn'); };
+    reader.readAsText(file);
+  }
+  /** Text of a PDF's first 20 pages via PDF.js, which is only downloaded the first time a PDF is opened. */
+  var pdfLib = null;
+  function readPdfText(file) {
+    var base = new URL('js/vendor/pdfjs/', document.baseURI).href;
+    pdfLib = pdfLib || import(base + 'pdf.min.js').then(function (lib) {
+      lib.GlobalWorkerOptions.workerSrc = base + 'pdf.worker.min.js';
+      return lib;
+    });
+    return Promise.all([pdfLib, file.arrayBuffer()]).then(function (r) {
+      return r[0].getDocument({ data: new Uint8Array(r[1]), isEvalSupported: false }).promise;
+    }).then(function (doc) {
+      var pages = [];
+      for (var i = 1; i <= Math.min(doc.numPages, 20); i++) pages.push(i);
+      return pages.reduce(function (p, n) {
+        return p.then(function (acc) {
+          return doc.getPage(n).then(function (page) { return page.getTextContent(); }).then(function (tc) { return acc.concat([IM.pdfItemsToText(tc.items)]); });
+        });
+      }, Promise.resolve([])).then(function (texts) { try { (doc.destroy || doc.cleanup || function () {}).call(doc); } catch (e) { /* ignore */ } return texts.join('\n'); });
+    }).catch(function (e) { pdfLib = null; throw e; }); // let the next try download PDF.js again
   }
   function planPreview(res) {
     var html = res.workouts.map(function (w, wi) {
@@ -1325,7 +1381,7 @@
     }).join('');
     var n = res.workouts.length;
     openModal('<h2>' + (n === 1 ? 'Save this workout?' : 'Save ' + n + ' workouts?') + '</h2>' + html +
-      (res.skipped.length ? '<p class="muted small">Left out ' + res.skipped.length + ' line' + (res.skipped.length === 1 ? '' : 's') + ' that weren’t exercises, such as: “' + esc(res.skipped[0].slice(0, 60)) + '”.</p>' : '') +
+      (res.skipped.length ? '<p class="muted small">Left out ' + (res.skipped.length === 1 ? '1 line that isn’t an exercise' : res.skipped.length + ' lines that aren’t exercises, such as') + ': “' + esc(res.skipped[0].slice(0, 60)) + '”.</p>' : '') +
       '<p class="muted small">Sets are saved; rep targets aren’t kept yet, and last time’s numbers fill in as hints when you start. You can edit everything afterwards.</p>' +
       '<div class="modal-actions"><button class="btn ghost" data-act="plan-back">Back</button><button class="btn primary" data-act="plan-save">Save</button></div>');
   }
@@ -1642,17 +1698,19 @@
       V.summary = null;
       draftFromWorkout(wk);
     },
-    'plan-paste': function () { pastePlanForm(V.planText || ''); },
+    'plan-paste': function () { V.planFileName = ''; pastePlanForm(V.planText || ''); },
     'plan-copy-tip': function () {
       var tip = 'Write it as a plain list, one exercise per line, like "Bench press 4x8". Put the workout name on its own line above.';
       var done = function () { toast('Copied. Paste it after your request to Claude'); };
       try { navigator.clipboard.writeText(tip).then(done, function () { toast(tip, '', 6000); }); } catch (e) { toast(tip, '', 6000); }
     },
+    'plan-file-pick': function () { var f = document.getElementById('plan-file'); if (f) { f.value = ''; f.click(); } },
     'plan-preview': function () {
       var el = document.getElementById('plan-text');
       V.planText = el ? el.value : '';
       var res = IM.parseWorkoutText(V.planText, { exercises: allExercises() });
       if (!res.workouts.length) { toast('No exercises found. Put one per line, like “Bench press 4x8”.', 'warn', 4000); return; }
+      if (V.planFileName && !res.workouts[0].name) res.workouts[0].name = V.planFileName; // a file with no title line: use its name
       V.planParsed = res;
       closeModal();
       planPreview(res);
@@ -1751,6 +1809,7 @@
     var el = ev.target;
     if (el.id === 'import-file' && el.files && el.files[0]) importBackup(el.files[0]);
     if (el.id === 'fitbod-file' && el.files && el.files[0]) importFitbod(el.files[0]);
+    if (el.id === 'plan-file' && el.files && el.files[0]) loadPlanFile(el.files[0]);
   });
   document.addEventListener('keydown', function (ev) {
     if (ev.key === 'Escape') {

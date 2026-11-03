@@ -289,7 +289,9 @@
       var looksLikeTitle = words <= 6 && !/[.!?]$/.test(bare) && !/^(warm|cool|rest|note|tip|perform|do |aim|focus|superset)/i.test(bare);
       if (looksLikeTitle) {
         var title = bare.replace(/^(day|workout|session)\s*\d+\s*[:–—-]\s*/i, '').replace(/\s*[:–—-]\s*$/, '').trim() || bare;
-        if (!cur || cur.exercises.length) start(title.slice(0, 60)); else if (!cur.name) cur.name = title.slice(0, 60);
+        var dayHeading = /^(day|workout|session|week)\s*\d/i.test(bare);
+        if (!cur || cur.exercises.length) start(title.slice(0, 60));
+        else if (!cur.name || dayHeading) cur.name = title.slice(0, 60); // "Day 1: Upper" beats a document title above it
         return;
       }
       skipped.push(line);
@@ -297,7 +299,47 @@
     return { workouts: workouts.filter(function (w) { return w.exercises.length; }), skipped: skipped };
   }
 
-  var api = { parseCsv: parseCsv, parseFitbod: parseFitbod, parseWorkoutText: parseWorkoutText };
+  /**
+   * Rebuilds lines of text from PDF.js text items ({ str, transform: [a, b, c, d, x, y], width, height }).
+   * Items on the same baseline become one line, left to right; a wide gap (a table column) becomes " | ".
+   */
+  function pdfItemsToText(items) {
+    var lines = [];
+    items.forEach(function (it) {
+      if (!it || typeof it.str !== 'string' || !it.str.trim() || !it.transform) return; // blank items would hide column gaps
+      var x = it.transform[4], y = it.transform[5], h = Math.abs(it.height || it.transform[3]) || 10;
+      var line = null;
+      for (var i = 0; i < lines.length; i++) if (Math.abs(lines[i].y - y) <= h * 0.5) { line = lines[i]; break; }
+      if (!line) { line = { y: y, h: h, parts: [] }; lines.push(line); }
+      line.parts.push({ x: x, w: it.width || 0, s: it.str });
+    });
+    lines.sort(function (a, b) { return b.y - a.y; });
+    return lines.map(function (l) {
+      l.parts.sort(function (a, b) { return a.x - b.x; });
+      var out = '', end = null;
+      l.parts.forEach(function (p) {
+        if (end !== null) {
+          var gap = p.x - end;
+          if (gap > l.h * 1.5) out += ' | ';
+          else if (gap > l.h * 0.15 && !/\s$/.test(out) && !/^\s/.test(p.s)) out += ' ';
+        }
+        out += p.s;
+        end = p.x + p.w;
+      });
+      return out.replace(/\s+/g, ' ').trim();
+    }).filter(Boolean).join('\n');
+  }
+
+  /** A CSV of exercises (any columns) as table rows the plan reader understands. Refuses a Fitbod history export. */
+  function csvToPlanText(text) {
+    var rows = parseCsv(text);
+    if (rows.length && column(rows[0], /^date$/i) >= 0 && column(rows[0], /^exercise$/i) >= 0 && column(rows[0], /^reps$/i) >= 0) {
+      throw new Error('This is a Fitbod history export. Use Settings → Import from Fitbod for it.');
+    }
+    return rows.map(function (r) { return '| ' + r.join(' | ') + ' |'; }).join('\n');
+  }
+
+  var api = { parseCsv: parseCsv, parseFitbod: parseFitbod, parseWorkoutText: parseWorkoutText, pdfItemsToText: pdfItemsToText, csvToPlanText: csvToPlanText };
   root.PRF = root.PRF || {};
   root.PRF.importers = api;
   if (typeof module === 'object' && module.exports) module.exports = api;

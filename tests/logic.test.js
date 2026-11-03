@@ -411,3 +411,21 @@ test('pasted workout plan: bare names get 3 sets, sets are clamped, nothing usab
   assert.deepEqual(r.workouts[0].exercises.map((e) => [e.exerciseId, e.sets]), [['bench-press', 3], ['dip', 20]]);
   assert.equal(importers.parseWorkoutText('Just stretch and rest today.', { exercises: ex.BUILT_IN }).workouts.length, 0);
 });
+
+test('workout files: PDF text items rebuild lines and table columns; CSV becomes table rows', () => {
+  const it = (s, x, y, w) => ({ str: s, transform: [10, 0, 0, 10, x, y], width: w, height: 10 });
+  const text = importers.pdfItemsToText([
+    it('Upper', 50, 700, 30), it('Body', 83, 700, 25),
+    it('Bench Press', 50, 680, 60), it('4', 200, 680, 5), it('8', 260, 680, 5),
+    it('Pull-ups', 50, 660, 40), it('3', 200, 661, 5), it('AMRAP', 260, 660, 30)
+  ]);
+  assert.equal(text, 'Upper Body\nBench Press | 4 | 8\nPull-ups | 3 | AMRAP');
+  const plan = importers.parseWorkoutText(text, { exercises: ex.BUILT_IN });
+  assert.equal(plan.workouts[0].name, 'Upper Body');
+  assert.deepEqual(plan.workouts[0].exercises.map((e) => [e.exerciseId, e.sets]), [['bench-press', 4], ['pull-up', 3]]);
+
+  const csv = importers.csvToPlanText('Exercise,Sets,Reps\nBack Squat,5,5\nLeg Press,3,12\n');
+  assert.deepEqual(importers.parseWorkoutText(csv, { exercises: ex.BUILT_IN }).workouts[0].exercises.map((e) => [e.exerciseId, e.sets, e.reps]),
+    [['back-squat', 5, '5'], ['leg-press', 3, '12']]);
+  assert.throws(() => importers.csvToPlanText(FITBOD), /Fitbod/);
+});

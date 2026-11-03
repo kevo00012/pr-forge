@@ -65,3 +65,45 @@ grant select, insert, update, delete on public.profiles to authenticated;
 grant select, insert, update, delete on public.workouts to authenticated;
 revoke all on public.profiles from anon;
 revoke all on public.workouts from anon;
+
+-- ---------------------------------------------------------------------------------------------
+-- Sign-in handover (app 1.6.3). On iPhone, Google sign-in from the home-screen app can finish in a
+-- browser sheet with its own storage. The app sends a one-time random secret (nonce) along; the sheet
+-- stores the new sign-in under it here, and the app collects it once, within 5 minutes.
+-- Nobody can read this table directly: only these two functions touch it.
+create table if not exists public.signin_handoffs (
+  nonce         text primary key check (length(nonce) >= 32),
+  refresh_token text not null,
+  created_at    timestamptz not null default now()
+);
+alter table public.signin_handoffs enable row level security;
+revoke all on public.signin_handoffs from anon, authenticated;
+
+-- Called by the browser sheet, signed in as the person.
+create or replace function public.prf_handoff_put(p_nonce text, p_refresh text) returns void
+language plpgsql security definer set search_path = '' as $$
+begin
+  if auth.uid() is null then raise exception 'not signed in'; end if;
+  if p_nonce is null or length(p_nonce) < 32 then raise exception 'bad handover code'; end if;
+  delete from public.signin_handoffs where created_at < now() - interval '10 minutes';
+  insert into public.signin_handoffs (nonce, refresh_token) values (p_nonce, p_refresh)
+    on conflict (nonce) do nothing;
+end;
+$$;
+
+-- Called by the app before it's signed in. Returns the sign-in once, then it's gone.
+create or replace function public.prf_handoff_take(p_nonce text) returns text
+language plpgsql security definer set search_path = '' as $$
+declare t text;
+begin
+  delete from public.signin_handoffs
+    where nonce = p_nonce and created_at > now() - interval '5 minutes'
+    returning refresh_token into t;
+  return t;
+end;
+$$;
+
+revoke all on function public.prf_handoff_put(text, text) from public, anon;
+grant execute on function public.prf_handoff_put(text, text) to authenticated;
+revoke all on function public.prf_handoff_take(text) from public;
+grant execute on function public.prf_handoff_take(text) to anon, authenticated;

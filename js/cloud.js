@@ -21,12 +21,23 @@
   var restoring = false; // first download after signing in on this phone
   var failure = '';      // why the last sign-in couldn't finish, shown on the sign-in screen
   var STARTED_KEY = ST.KEY + ':signin-started';
+  // Handover: on iPhone, Google sign-in from the home-screen app can finish in a browser sheet that has its own
+  // storage. The app makes a one-time secret (nonce) and passes it in the return address; the sheet hands the
+  // sign-in to the app through the database under that secret, and the app collects it when you come back.
+  var RETURN_NONCE = (/[?&]h=([0-9a-f]{32,128})(?:&|$)/.exec(location.search) || [])[1] || '';
+  var handingOff = false, handedOff = false, claimTimer = null, claiming = false;
+  function started() { try { return JSON.parse(localStorage.getItem(STARTED_KEY) || 'null'); } catch (e) { return null; } }
+  function newNonce() {
+    var b = new Uint8Array(24);
+    (root.crypto || root.msCrypto).getRandomValues(b);
+    return Array.prototype.map.call(b, function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
+  }
   function where() {
     var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
     return standalone ? 'the home-screen app' : 'the browser';
   }
   /** True when Google has just sent someone back (tokens or an error in the address). */
-  function isReturn() { return /[?&](code|error)=/.test(location.search) || /(access_token|error)=/.test(location.hash); }
+  function isReturn() { return /[?&](code|error|h)=/.test(location.search) || /(access_token|error)=/.test(location.hash); }
   function cleanUrl() {
     if (isReturn()) {
       try { history.replaceState(null, '', location.pathname); } catch (e) { /* ignore */ }
@@ -34,7 +45,7 @@
   }
   /** Google sent us back but no session came of it: stop waiting and say why. */
   function signInFailed(err) {
-    if (session || !isReturn()) return;
+    if (session || handingOff || handedOff || !isReturn()) return;
     var started = null;
     try { started = JSON.parse(localStorage.getItem(STARTED_KEY) || 'null'); } catch (e) { /* ignore */ }
     if (err && /fetch|network|load failed/i.test(String(err.message))) failure = 'Sign-in didn’t finish: couldn’t reach the sign-in server. Check your connection and try again.';
@@ -150,6 +161,50 @@
     timer = setTimeout(sync, ms == null ? 1500 : ms);
   }
 
+  /** In the sheet: give the sign-in to the app under its secret, then forget it here. */
+  function handOff(s) {
+    handingOff = true;
+    client.rpc('prf_handoff_put', { p_nonce: RETURN_NONCE, p_refresh: s.refresh_token }).then(function (res) {
+      if (res.error) throw res.error;
+      // Forget the sign-in here without telling the server: a server sign-out would end the very session the
+      // app is about to collect. Stop refreshing it too, so this copy never uses its token again.
+      try { client.auth.stopAutoRefresh(); } catch (e) { /* ignore */ }
+      try {
+        Object.keys(localStorage).forEach(function (k) { if (/^sb-.*-auth-token/.test(k)) localStorage.removeItem(k); });
+      } catch (e) { /* ignore */ }
+    }).then(function () {
+      handingOff = false; handedOff = true;
+      cleanUrl();
+      if (hooks.onData) hooks.onData();
+    }, function () {
+      // The handover table isn't there (or the network failed): sign in right here, as before.
+      handingOff = false;
+      adoptSession(s);
+    });
+  }
+  /** In the app: collect a sign-in the sheet handed over. Runs on return to the app and every 2 s while waiting. */
+  function tryClaim() {
+    var st = started();
+    if (!client || session || claiming || !st || !st.nonce || !navigator.onLine) return;
+    if (Date.now() - new Date(st.at).getTime() > 10 * 60000) { try { localStorage.removeItem(STARTED_KEY); } catch (e) { /* ignore */ } return; }
+    claiming = true;
+    client.rpc('prf_handoff_take', { p_nonce: st.nonce }).then(function (res) {
+      var token = res && !res.error ? res.data : null;
+      if (!token) return;
+      return client.auth.refreshSession({ refresh_token: token }).then(function (r) {
+        if (r && r.data && r.data.session) adoptSession(r.data.session);
+      });
+    }).then(function () { claiming = false; }, function () { claiming = false; });
+  }
+  function startClaiming() {
+    clearInterval(claimTimer);
+    claimTimer = setInterval(function () {
+      var st = started();
+      if (session || !st || !st.nonce) { clearInterval(claimTimer); return; }
+      if (document.visibilityState === 'visible') tryClaim();
+    }, 2000);
+  }
+
   function adoptSession(s) {
     session = s;
     if (!s) return;
@@ -196,7 +251,11 @@
       client.auth.onAuthStateChange(function (event, s) {
         // Supabase asks that no other Supabase calls run inside this callback.
         setTimeout(function () {
-          if (s && (!session || s.user.id !== session.user.id || event === 'SIGNED_IN')) adoptSession(s);
+          var st = started();
+          // Coming back with a handover code that this storage didn't make: we're in the sheet, so pass it on.
+          if (s && RETURN_NONCE && !session && !handingOff && !handedOff && !(st && st.nonce === RETURN_NONCE)) handOff(s);
+          else if (handingOff || handedOff) { /* the sheet is passing this sign-in to the app */ }
+          else if (s && (!session || s.user.id !== session.user.id || event === 'SIGNED_IN')) adoptSession(s);
           else if (s) session = s;
           else if (event === 'SIGNED_OUT' && !signingOut) { session = null; if (meta.userId) setStatus('signin'); }
           else if (!s && meta.userId && !session) setStatus(navigator.onLine ? 'signin' : 'offline');
@@ -204,12 +263,19 @@
       });
       window.addEventListener('online', function () { schedule(300); });
       window.addEventListener('offline', function () { setStatus('offline'); });
-      document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') schedule(300); });
+      document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') { schedule(300); tryClaim(); } });
+      window.addEventListener('focus', tryClaim);
+      window.addEventListener('pageshow', tryClaim);
+      if (!meta.userId && started() && started().nonce && !isReturn()) { tryClaim(); startClaiming(); }
     },
     /** Who this phone's data belongs to, or null if nobody has signed in. Works offline. */
     owner: function () { return meta.userId ? { userId: meta.userId, email: meta.email } : null; },
     /** True while a sign-in redirect is being finished. */
-    returningFromSignIn: function () { return isReturn() && !/error/.test(location.search + location.hash); },
+    returningFromSignIn: function () { return (isReturn() && !/error/.test(location.search + location.hash)) || handingOff; },
+    /** True in the browser sheet after it has handed the sign-in to the app. */
+    handedOff: function () { return handedOff; },
+    /** True in the app while it waits for a sign-in to come back from the sheet. */
+    waitingForSignIn: function () { var st = started(); return !session && !meta.userId && !!(st && st.nonce) && Date.now() - new Date(st.at).getTime() < 10 * 60000; },
     /** True while the first download after signing in on this phone is running. */
     restoring: function () { return restoring; },
     signInError: function () {
@@ -220,10 +286,12 @@
     signIn: function () {
       if (!client) return Promise.reject(new Error('Sign-in could not load. Check your connection and reload.'));
       failure = '';
-      try { localStorage.setItem(STARTED_KEY, JSON.stringify({ at: new Date().toISOString(), where: where() })); } catch (e) { /* ignore */ }
+      var nonce = newNonce();
+      try { localStorage.setItem(STARTED_KEY, JSON.stringify({ at: new Date().toISOString(), where: where(), nonce: nonce })); } catch (e) { /* ignore */ }
+      startClaiming();
       return client.auth.signInWithOAuth({
         provider: 'google',
-        options: { redirectTo: location.origin + location.pathname }
+        options: { redirectTo: location.origin + location.pathname + '?h=' + nonce }
       }).then(function (res) { if (res.error) throw res.error; });
     },
     /** Signs out and removes this phone's copy (the cloud copy stays). */

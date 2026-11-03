@@ -26,6 +26,16 @@
   // sign-in to the app through the database under that secret, and the app collects it when you come back.
   var RETURN_NONCE = (/[?&]h=([0-9a-f]{32,128})(?:&|$)/.exec(location.search) || [])[1] || '';
   var handingOff = false, handedOff = false, claimTimer = null, claiming = false;
+  // Diagnostics (shown small on the sign-in screen): when this copy's storage began, and how the last sign-in went.
+  var BORN_KEY = ST.KEY + ':born', LAST_KEY = ST.KEY + ':last-signin';
+  var born = null;
+  try {
+    born = JSON.parse(localStorage.getItem(BORN_KEY) || 'null');
+    if (!born) { born = { at: new Date().toISOString(), where: where() }; localStorage.setItem(BORN_KEY, JSON.stringify(born)); }
+  } catch (e) { born = null; }
+  function noteSignIn(how) {
+    try { localStorage.setItem(LAST_KEY, JSON.stringify({ at: new Date().toISOString(), where: where(), how: how, code: !!RETURN_NONCE })); } catch (e) { /* ignore */ }
+  }
   function started() { try { return JSON.parse(localStorage.getItem(STARTED_KEY) || 'null'); } catch (e) { return null; } }
   function newNonce() {
     var b = new Uint8Array(24);
@@ -174,6 +184,7 @@
       } catch (e) { /* ignore */ }
     }).then(function () {
       handingOff = false; handedOff = true;
+      noteSignIn('handed to the app');
       cleanUrl();
       if (hooks.onData) hooks.onData();
     }, function () {
@@ -192,7 +203,7 @@
       var token = res && !res.error ? res.data : null;
       if (!token) return;
       return client.auth.refreshSession({ refresh_token: token }).then(function (r) {
-        if (r && r.data && r.data.session) adoptSession(r.data.session);
+        if (r && r.data && r.data.session) { adoptSession(r.data.session); noteSignIn('collected from the browser sheet'); }
       });
     }).then(function () { claiming = false; }, function () { claiming = false; });
   }
@@ -255,7 +266,10 @@
           // Coming back with a handover code that this storage didn't make: we're in the sheet, so pass it on.
           if (s && RETURN_NONCE && !session && !handingOff && !handedOff && !(st && st.nonce === RETURN_NONCE)) handOff(s);
           else if (handingOff || handedOff) { /* the sheet is passing this sign-in to the app */ }
-          else if (s && (!session || s.user.id !== session.user.id || event === 'SIGNED_IN')) adoptSession(s);
+          else if (s && (!session || s.user.id !== session.user.id || event === 'SIGNED_IN')) {
+            if (isReturn()) noteSignIn(RETURN_NONCE ? 'finished here (same window)' : 'finished here, with no handover code in the address');
+            adoptSession(s);
+          }
           else if (s) session = s;
           else if (event === 'SIGNED_OUT' && !signingOut) { session = null; if (meta.userId) setStatus('signin'); }
           else if (!s && meta.userId && !session) setStatus(navigator.onLine ? 'signin' : 'offline');
@@ -272,6 +286,15 @@
     owner: function () { return meta.userId ? { userId: meta.userId, email: meta.email } : null; },
     /** True while a sign-in redirect is being finished. */
     returningFromSignIn: function () { return (isReturn() && !/error/.test(location.search + location.hash)) || handingOff; },
+    /** One line for the sign-in screen: which copy this is, how old its storage is, how the last sign-in went. */
+    diagnostics: function () {
+      var t = function (iso) { var d = new Date(iso); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); };
+      var last = null; try { last = JSON.parse(localStorage.getItem(LAST_KEY) || 'null'); } catch (e) { /* ignore */ }
+      var hasToken = false; try { hasToken = Object.keys(localStorage).some(function (k) { return /^sb-.*-auth-token$/.test(k); }); } catch (e) { /* ignore */ }
+      return 'This is ' + where() + '. Saved data here since ' + (born ? t(born.at) : 'unknown (storage blocked)') + '. ' +
+        (last ? 'Last sign-in here: ' + t(last.at) + ', ' + last.how + '.' : 'No sign-in has finished here.') +
+        ' Google session stored: ' + (hasToken ? 'yes' : 'no') + '. Owner: ' + (meta.userId ? 'yes' : 'no') + '.';
+    },
     /** True in the browser sheet after it has handed the sign-in to the app. */
     handedOff: function () { return handedOff; },
     /** True in the app while it waits for a sign-in to come back from the sheet. */

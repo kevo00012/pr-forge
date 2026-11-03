@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '1.6.3';
+  var VERSION = '1.6.4';
 
   var S = ST.load();
   var V = {
@@ -886,7 +886,8 @@
         (err ? '<p class="small warn-text">' + esc(err) + '</p>' : '') +
         (navigator.onLine ? '' : '<p class="small warn-text">You’re offline. Signing in needs a connection the first time; after that the app works without one.</p>') +
         '<div class="foot-actions"><button class="btn primary block" data-act="sign-in">Continue with Google</button>' +
-        '<a class="muted small center privacy-link" href="privacy.html">Privacy: what’s stored and how to delete it</a></div>') +
+        '<a class="muted small center privacy-link" href="privacy.html">Privacy: what’s stored and how to delete it</a></div>' +
+        '<p class="muted small diag">' + esc(CLOUD.diagnostics()) + '</p>') +
       '</section>';
   }
 
@@ -925,7 +926,8 @@
     return '<div class="setting col"><span>Account</span><p class="muted small">Signed in as <strong>' + esc(o.email || 'Google account') + '</strong>. ' +
       '<span data-sync-status>' + esc(syncText()) + '</span></p>' +
       (expired ? '<button class="btn primary block" data-act="sign-in">Sign in again</button>' : '') +
-      '<div class="row-2"><button class="btn ghost" data-act="sync-now">Back up now</button><button class="btn ghost" data-act="sign-out">Sign out</button></div></div>';
+      '<div class="row-2"><button class="btn ghost" data-act="sync-now">Back up now</button><button class="btn ghost" data-act="sign-out">Sign out</button></div>' +
+      '<p class="muted small diag">' + esc(CLOUD.diagnostics()) + '</p></div>';
   }
   function showSyncStatus() {
     var el = document.querySelector('[data-sync-status]');

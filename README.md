@@ -37,7 +37,7 @@ Run `node tools/serve.js` and open http://localhost:8000/. Google sign-in needs 
 
 ### Updating later
 
-Upload the changed files to the repo again (same "Add file → Upload files" button, then commit). Before uploading, bump the version in `sw.js` (`CACHE = 'pr-forge-web-1.5.0'`) so phones fetch the new files.
+Upload the changed files to the repo again (same "Add file → Upload files" button, then commit). Before uploading, bump the version in `sw.js` (`CACHE = 'pr-forge-web-1.5.1'`) so phones fetch the new files.
 
 ## Your data
 
@@ -51,9 +51,10 @@ Upload the changed files to the repo again (same "Add file → Upload files" but
 
 The `icons` folder holds the logo, cropped to its badge and resized from the original artwork:
 
-- `logo.png`: the splash logo (if it can't load, the splash shows the text "PR FORGE")
+- `logo.png`: the full badge, used on the first-open and sign-in screens
+- `splash-logo.png`: the badge's P mark and "PR FORGE" lettering lifted off its dark background (same pixels, background made transparent), used on the splash; if it can't load, the splash shows the text "PR FORGE"
 - `wordmark.png`: the logo's "PR FORGE" lettering on a transparent background, used in the Today header
-- `apple-touch-icon.png`: 180×180, the iPhone home-screen icon
+- `apple-touch-icon.png`: 180×180, the iPhone home-screen icon. The icons show only the P mark (no lettering, which is unreadable at icon size) on the badge's own dark background, full-bleed so the phone rounds the corners
 - `icon-192.png` and `icon-512.png`: Android/desktop install icons and the browser tab icon
 
 ## For developers

@@ -1,4 +1,4 @@
-/* PR Forge — Fitbod CSV import. Pure functions, no DOM, no storage.
+/* PR Forge — Fitbod CSV import and pasted workout plans. Pure functions, no DOM, no storage.
  * Expected columns: Date, Exercise, Reps, Weight(kg), Duration(s), Distance(m), Incline, Resistance, isWarmup, Note, multiplier.
  * Dates look like "2023-03-01 14:23:10 -0700". One calendar day becomes one workout. */
 (function (root) {
@@ -189,7 +189,115 @@
     };
   }
 
-  var api = { parseCsv: parseCsv, parseFitbod: parseFitbod };
+  // ---------- Pasted workout plans (e.g. one written by Claude) ----------
+
+  var ABBREV = [[/\bdb\b/g, 'dumbbell'], [/\bbb\b/g, 'barbell'], [/\bkb\b/g, 'kettlebell'], [/\bohp\b/g, 'overhead press'],
+    [/\brdls?\b/g, 'romanian deadlift'], [/\bpull[- ]?ups\b/g, 'pull up'], [/\bchin[- ]?ups\b/g, 'chin up'], [/\bpush[- ]?ups\b/g, 'push up'],
+    [/\bdips\b/g, 'dip'], [/\bfl(?:y|i)es\b/g, 'fly'], [/\bpulldowns\b/g, 'pulldown'], [/\bpushdowns\b/g, 'pushdown']];
+  var MUSCLE_WORDS = /\b(biceps?|triceps?|bicep|tricep|chest|quad|quads|hamstring|hamstrings|calf|calves|glute|glutes|shoulder|lat|lats)\b/g;
+
+  // Plain names a plan often uses that have no single obvious match in the list.
+  var PLAN_NAMES = { 'calf raise': 'standing-calf-raise', 'lunge': 'walking-lunge', 'shoulder press': 'db-shoulder-press', 'row': 'barbell-row', 'leg curl': 'lying-leg-curl' };
+  var EQUIP_RE = /\b(barbell|dumbbell|cable|machine|smith|kettlebell)\b/;
+
+  /** Tries the name as written, then with common gym abbreviations expanded, then without muscle words ("bicep curl"), then as the barbell version. */
+  function planMatcher(exercises) {
+    var m = matcher(exercises);
+    var byId = {}, plainNames = {};
+    exercises.forEach(function (e) { byId[e.id] = e; });
+    Object.keys(PLAN_NAMES).forEach(function (k) { plainNames[signature(words(k))] = PLAN_NAMES[k]; });
+    return function (name) {
+      var n = String(name).toLowerCase();
+      var plain = plainNames[signature(words(n))];
+      if (plain && byId[plain]) return plain;
+      var wanted = EQUIP_RE.exec(n.replace(/\bdb\b/, 'dumbbell').replace(/\bbb\b/, 'barbell'));
+      var tries = [n];
+      var expanded = ABBREV.reduce(function (t, r) { return t.replace(r[0], r[1]); }, n);
+      tries.push(expanded);
+      tries.push(expanded.replace(MUSCLE_WORDS, ' ').replace(/\s+/g, ' ').trim());
+      // "Bench press" with no equipment named: the barbell version is what people usually mean.
+      if (!/\b(barbell|dumbbell|cable|machine|smith|kettlebell|band|bodyweight|ez|trap)\b/.test(expanded)) tries.push('barbell ' + tries[2]);
+      for (var i = 0; i < tries.length; i++) {
+        if (!tries[i]) continue;
+        var id = m(tries[i]);
+        if (!id) continue;
+        if (i === 3 && byId[id].library) continue;                                   // the barbell guess only counts for the main list
+        if (wanted && String(byId[id].equipment).toLowerCase().indexOf(wanted[1]) === -1) continue; // "cable fly" isn't the dumbbell fly
+        return id;
+      }
+      return null;
+    };
+  }
+
+  // "4x8", "3 × 8-10", "3 sets of 10", "3 sets x 12 reps", "4 sets, 6–8 reps", "3x30s", "3 x AMRAP"
+  var SETS_RE = /(\d{1,2})\s*(?:sets?\s*)?(?:[x×*]|sets?\s+of|sets?\s*[,:–—-]?\s*(?=\d))\s*(\d{1,3}(?:\s*[-–—]\s*\d{1,3})?|amrap|max|failure)?\s*(?:reps?|s\b|sec(?:onds?)?\b)?/i;
+
+  function cleanLine(line) {
+    return String(line)
+      .replace(/\*\*|__|`/g, '')                         // markdown bold / code
+      .replace(/^\s*(?:#{1,6}|[-*•●▪◦>]+|\d{1,2}[.)]|[a-z]\d{1,2}[.):]?)\s+/i, '') // headings, bullets, "1.", "A1."
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  function tidyName(n) {
+    return n.replace(/\([^)]*\)/g, ' ').replace(/[–—:|,;]+\s*$/, '').replace(/^[–—:|,;\-\s]+/, '').replace(/\s+[-–—]\s*$/, '').replace(/\s+/g, ' ').trim();
+  }
+
+  /**
+   * Turns pasted text into saved-workout drafts.
+   * Returns { workouts: [{ name, exercises: [{ name, exerciseId|null, sets, reps }] }], skipped: [lines] }.
+   * A line with sets ("Bench press 4x8") is an exercise; a short line without them ("Upper Body", "Day 2: Pull") starts
+   * a new workout; a line that is just a known exercise name gets 3 sets; anything else (warm-up notes, rest times) is skipped.
+   */
+  function parseWorkoutText(text, options) {
+    var match = planMatcher(options.exercises);
+    var workouts = [], skipped = [];
+    var cur = null;
+    function start(name) { cur = { name: name, exercises: [] }; workouts.push(cur); }
+    String(text || '').split(/\r?\n/).forEach(function (raw) {
+      var line = cleanLine(raw);
+      if (!line) return;
+      if (/^\|?\s*:?-{3,}/.test(line)) return;                    // markdown table divider
+      var name = null, sets = null, reps = '';
+      if (line.indexOf('|') !== -1) {                             // markdown table row: | Exercise | Sets | Reps |
+        var cells = line.split('|').map(function (c) { return c.trim(); }).filter(Boolean);
+        var nameCell = cells.filter(function (c) { return /[a-z]/i.test(c) && !/^(\d+\s*[-–]\s*)?\d+\s*(reps?|s|sec)?$/i.test(c); })[0];
+        var nums = cells.filter(function (c) { return /^\d/.test(c); });
+        if (!nameCell || /^(exercise|movement|sets?|reps?|rest|notes?)$/i.test(nameCell)) return;
+        if (nums.length) { name = nameCell; sets = parseInt(nums[0], 10); reps = nums[1] || ''; }
+        else line = nameCell;
+      }
+      if (name === null) {
+        var m = SETS_RE.exec(line);
+        if (m && (m[2] || /sets?/i.test(m[0]))) {
+          sets = parseInt(m[1], 10);
+          reps = m[2] ? m[2].replace(/\s+/g, '') : '';
+          name = tidyName(line.slice(0, m.index)) || tidyName(line.slice(m.index + m[0].length).replace(/^\s*(?:reps?)?\s*/, ''));
+        }
+      }
+      if (name !== null) {
+        if (!name) { skipped.push(line); return; }
+        if (/^(warm[- ]?up|cool[- ]?down|rest|stretch)/i.test(name) && !match(name)) { skipped.push(line); return; }
+        if (!cur) start('');
+        cur.exercises.push({ name: name.slice(0, 80), exerciseId: match(name), sets: Math.min(20, Math.max(1, sets || 3)), reps: reps });
+        return;
+      }
+      var bare = tidyName(line);
+      var id = bare && bare.split(' ').length <= 6 ? match(bare) : null;
+      if (id) { if (!cur) start(''); cur.exercises.push({ name: bare, exerciseId: id, sets: 3, reps: '' }); return; }
+      var words = bare.split(' ').length;
+      var looksLikeTitle = words <= 6 && !/[.!?]$/.test(bare) && !/^(warm|cool|rest|note|tip|perform|do |aim|focus|superset)/i.test(bare);
+      if (looksLikeTitle) {
+        var title = bare.replace(/^(day|workout|session)\s*\d+\s*[:–—-]\s*/i, '').replace(/\s*[:–—-]\s*$/, '').trim() || bare;
+        if (!cur || cur.exercises.length) start(title.slice(0, 60)); else if (!cur.name) cur.name = title.slice(0, 60);
+        return;
+      }
+      skipped.push(line);
+    });
+    return { workouts: workouts.filter(function (w) { return w.exercises.length; }), skipped: skipped };
+  }
+
+  var api = { parseCsv: parseCsv, parseFitbod: parseFitbod, parseWorkoutText: parseWorkoutText };
   root.PRF = root.PRF || {};
   root.PRF.importers = api;
   if (typeof module === 'object' && module.exports) module.exports = api;

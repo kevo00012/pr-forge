@@ -220,6 +220,15 @@ h3, h2.h-lift { font-size: 20px; font-weight: 700; line-height: 1.05; overflow-w
   border: 1px solid var(--line-2); background: var(--bg); color: var(--text); font-size: 16px; flex: none;
 }
 .field input:focus, .search:focus { border-color: var(--accent); outline: none; }
+.field textarea { width: 100%; min-height: 180px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--bg); color: var(--text); font: inherit; font-size: 16px; line-height: 1.4; resize: vertical; }
+.field textarea:focus { border-color: var(--accent); outline: none; }
+.field textarea::placeholder { color: var(--ghost); }
+.paste-wk { display: flex; flex-direction: column; gap: 6px; }
+.paste-wk h3 { font-family: var(--cond); font-weight: 800; font-size: 20px; text-transform: uppercase; margin: 0; }
+.paste-list { display: flex; flex-direction: column; }
+.paste-list li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+.paste-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.paste-sets { font-family: var(--cond); font-weight: 700; font-size: 17px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .field select { appearance: none; -webkit-appearance: none; }
 input::placeholder { color: var(--ghost); opacity: 1; }
 

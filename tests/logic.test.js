@@ -382,3 +382,32 @@ test('store: round trip, rejects foreign files, survives corrupt storage', () =>
   assert.equal(fresh.workouts.length, 0);
   assert.ok(Object.keys(mem.data).some(k => k.includes(':unreadable:')));
 });
+
+test('pasted workout plan: Claude-style list, abbreviations, tables, several days', () => {
+  const text = [
+    '# Upper Body Workout', '', "Here's a solid session:", '**Warm-up:** 5 minutes rowing, arm circles', '',
+    '1. **Barbell Bench Press** — 4 sets x 6-8 reps', '2. Bent-Over Barbell Rows: 4 x 8', '3. DB Lateral Raises 3x12-15',
+    '4. Pull-ups 3 x AMRAP', '5. Tricep Rope Pushdowns 3 × 12', '6. Dumbbell Bicep Curls - 3 sets, 10-12 reps', '7. Zercher Wiggle 2x5',
+    'Rest 60–90 seconds between sets.', '',
+    'Day 2: Lower', '| Exercise | Sets | Reps |', '|---|---|---|', '| Back Squat | 5 | 5 |', '| Romanian Deadlift | 3 | 8 |'
+  ].join('\n');
+  const r = importers.parseWorkoutText(text, { exercises: ex.BUILT_IN });
+  assert.equal(r.workouts.length, 2);
+  const [up, low] = r.workouts;
+  assert.equal(up.name, 'Upper Body Workout');
+  assert.deepEqual(up.exercises.map((e) => [e.exerciseId, e.sets, e.reps]), [
+    ['bench-press', 4, '6-8'], ['barbell-row', 4, '8'], ['lateral-raise', 3, '12-15'], ['pull-up', 3, 'AMRAP'],
+    ['rope-pushdown', 3, '12'], ['db-curl', 3, '10-12'], [null, 2, '5']
+  ]);
+  assert.equal(up.exercises[6].name, 'Zercher Wiggle'); // unknown: kept by name, becomes a custom exercise
+  assert.equal(low.name, 'Lower');
+  assert.deepEqual(low.exercises.map((e) => [e.exerciseId, e.sets]), [['back-squat', 5], ['romanian-deadlift', 3]]);
+  assert.equal(r.skipped.length, 2); // warm-up note and rest note
+});
+
+test('pasted workout plan: bare names get 3 sets, sets are clamped, nothing usable gives no workouts', () => {
+  const r = importers.parseWorkoutText('Push\nBench Press\nDips 40x10\n', { exercises: ex.BUILT_IN });
+  assert.equal(r.workouts[0].name, 'Push');
+  assert.deepEqual(r.workouts[0].exercises.map((e) => [e.exerciseId, e.sets]), [['bench-press', 3], ['dip', 20]]);
+  assert.equal(importers.parseWorkoutText('Just stretch and rest today.', { exercises: ex.BUILT_IN }).workouts.length, 0);
+});

@@ -440,7 +440,8 @@
     if (!list) {
       list = '<section class="card empty"><p>No saved workouts yet.</p><p class="muted small">A saved workout is a list of exercises and how many sets you do of each. Starting one fills in last time’s numbers as hints.</p></section>';
     }
-    var copy = M.finished(S.workouts).length ? '<button class="btn ghost block" data-act="template-from-past">Copy a past workout</button>' : '';
+    var copy = '<div class="row-2"><button class="btn ghost" data-act="plan-paste">Paste a workout</button>' +
+      (M.finished(S.workouts).length ? '<button class="btn ghost" data-act="template-from-past">Copy a past one</button>' : '<span></span>') + '</div>';
     return '<header class="top row"><h1>Workouts</h1><div class="top-tools"><button class="btn primary sm" data-act="template-new">' + icon('plus', 'sm') + 'New</button>' + settingsButton() + '</div></header>' +
       list + copy + '<button class="btn ghost block" data-act="start-empty">Start an empty workout</button>';
   }
@@ -1304,6 +1305,32 @@
     reader.onerror = function () { toast('Couldn’t read that file', 'warn'); };
     reader.readAsText(file);
   }
+  // ----- Paste a workout (e.g. one Claude wrote) -----
+  function pastePlanForm(text) {
+    openModal('<h2>Paste a workout</h2>' +
+      '<p class="muted small">Paste a workout plan, for example one Claude wrote for you. One exercise per line works best, like “Bench press 4x8”. A short line above the exercises becomes the workout’s name; paste several days at once and each becomes its own workout.</p>' +
+      '<label class="field"><span>Workout plan</span><textarea id="plan-text" rows="9" placeholder="Upper body&#10;Bench press 4x8&#10;Bent-over row 4x8&#10;Overhead press 3x10&#10;Pull-ups 3xAMRAP"></textarea></label>' +
+      '<button class="btn ghost sm" data-act="plan-copy-tip">Copy a tip to give Claude</button>' +
+      '<div class="modal-actions"><button class="btn ghost" data-act="modal-cancel">Cancel</button><button class="btn primary" data-act="plan-preview">Preview</button></div>');
+    var ta = document.getElementById('plan-text');
+    if (ta) { ta.value = text; setTimeout(function () { ta.focus(); }, 30); }
+  }
+  function planPreview(res) {
+    var html = res.workouts.map(function (w, wi) {
+      return '<section class="paste-wk"><h3>' + esc(w.name || 'Workout ' + (S.templates.length + wi + 1)) + '</h3><ul class="paste-list">' + w.exercises.map(function (e) {
+        var known = e.exerciseId ? exById(e.exerciseId) : null;
+        return '<li><span class="paste-name"><strong>' + esc(known ? known.name : e.name) + '</strong>' +
+          (known ? '' : '<span class="muted small">New exercise, added to your list</span>') + '</span>' +
+          '<span class="paste-sets">' + e.sets + (e.reps ? ' × ' + esc(e.reps) : ' sets') + '</span></li>';
+      }).join('') + '</ul></section>';
+    }).join('');
+    var n = res.workouts.length;
+    openModal('<h2>' + (n === 1 ? 'Save this workout?' : 'Save ' + n + ' workouts?') + '</h2>' + html +
+      (res.skipped.length ? '<p class="muted small">Left out ' + res.skipped.length + ' line' + (res.skipped.length === 1 ? '' : 's') + ' that weren’t exercises, such as: “' + esc(res.skipped[0].slice(0, 60)) + '”.</p>' : '') +
+      '<p class="muted small">Sets are saved; rep targets aren’t kept yet, and last time’s numbers fill in as hints when you start. You can edit everything afterwards.</p>' +
+      '<div class="modal-actions"><button class="btn ghost" data-act="plan-back">Back</button><button class="btn primary" data-act="plan-save">Save</button></div>');
+  }
+
   /** Opens the saved-workout editor pre-filled from a finished workout. */
   function draftFromWorkout(wk) {
     V.tplDraft = { id: null, name: wk.imported && wk.name === 'Fitbod workout' ? '' : wk.name, exercises: wk.exercises.map(function (e) {
@@ -1628,6 +1655,48 @@
     'template-copy': function (el) {
       var wk = findWorkout(el.dataset.id); closeModal(false); if (!wk) return;
       draftFromWorkout(wk);
+    },
+    'plan-paste': function () { pastePlanForm(V.planText || ''); },
+    'plan-copy-tip': function () {
+      var tip = 'Write it as a plain list, one exercise per line, like "Bench press 4x8". Put the workout name on its own line above.';
+      var done = function () { toast('Copied. Paste it after your request to Claude'); };
+      try { navigator.clipboard.writeText(tip).then(done, function () { toast(tip, '', 6000); }); } catch (e) { toast(tip, '', 6000); }
+    },
+    'plan-preview': function () {
+      var el = document.getElementById('plan-text');
+      V.planText = el ? el.value : '';
+      var res = IM.parseWorkoutText(V.planText, { exercises: allExercises() });
+      if (!res.workouts.length) { toast('No exercises found. Put one per line, like “Bench press 4x8”.', 'warn', 4000); return; }
+      V.planParsed = res;
+      closeModal();
+      planPreview(res);
+    },
+    'plan-back': function () { closeModal(); pastePlanForm(V.planText || ''); },
+    'plan-save': function () {
+      var res = V.planParsed; if (!res) return;
+      var made = {}, saved = [];
+      res.workouts.forEach(function (w, wi) {
+        var t = { id: 't-' + uid(), name: (w.name || 'Workout ' + (S.templates.length + 1)).slice(0, 60), exercises: [] };
+        w.exercises.forEach(function (e) {
+          var id = e.exerciseId;
+          if (!id) {
+            var key = e.name.toLowerCase();
+            if (!made[key]) {
+              made[key] = { id: 'c-' + uid(), name: e.name, muscle: 'Other', equipment: 'Other',
+                side: /\b(one|single)[- ]arm/i.test(e.name) ? 'arm' : /\b(one|single)[- ]leg|lunge|split squat|step[- ]?up/i.test(e.name) ? 'leg' : '', custom: true };
+              S.customExercises.push(made[key]);
+            }
+            id = made[key].id;
+          }
+          t.exercises.push({ exerciseId: id, sets: e.sets });
+        });
+        S.templates.push(t); saved.push(t);
+      });
+      V.planText = ''; V.planParsed = null;
+      closeModal();
+      V.tab = 'workouts'; V.screen = null;
+      commit();
+      toast(saved.length === 1 ? 'Saved “' + esc(saved[0].name) + '”' : 'Saved ' + saved.length + ' workouts');
     },
     'settings-open': function () { V.screen = 'settings'; V.picker = null; render(); },
     'settings-back': function () { V.screen = null; render(); },

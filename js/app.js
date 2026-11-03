@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '1.6.0';
+  var VERSION = '1.6.1';
 
   var S = ST.load();
   var V = {
@@ -297,9 +297,18 @@
   function needsSetup() { return !S.settings.setupDone && !S.active; }
   /** 'greet' or 'signin' while nobody has signed in on this phone, else ''. */
   function gate() {
-    if (CLOUD.owner()) return '';
-    if (!V.greeted && !S.settings.setupDone && !S.active && !CLOUD.returningFromSignIn() && !CLOUD.signInError()) return 'greet';
-    return 'signin';
+    if (shouldGreet()) return 'greet';
+    return CLOUD.owner() ? '' : 'signin';
+  }
+  // The joke question shows at most once a day (the first open of the day on this phone), never mid-workout
+  // or while Google is sending someone back. The day is kept on this phone only, not synced.
+  var GREET_KEY = ST.KEY + ':greeted-on';
+  function todayKey() { var d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); }
+  function shouldGreet() {
+    if (V.greeted || S.active || CLOUD.returningFromSignIn() || CLOUD.signInError()) return false;
+    var last = null;
+    try { last = localStorage.getItem(GREET_KEY); } catch (e) { /* storage blocked: treat as not shown */ }
+    return last !== todayKey();
   }
 
   function render() {
@@ -1775,7 +1784,11 @@
       if (read) read.textContent = el.dataset.read;
       document.querySelectorAll('.vol-col').forEach(function (c) { c.classList.toggle('picked', c === el); });
     },
-    'greet-yes': function () { V.greeted = true; render(); },
+    'greet-yes': function () {
+      V.greeted = true;
+      try { localStorage.setItem(GREET_KEY, todayKey()); } catch (e) { /* ignore */ }
+      render();
+    },
     'sign-in': function () {
       if (!navigator.onLine) { toast('You’re offline. Connect to sign in.', 'warn'); return; }
       CLOUD.signIn().catch(function (e) { toast(esc(e.message || 'Sign-in didn’t start. Try again.'), 'warn', 3500); });

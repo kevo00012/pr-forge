@@ -32,7 +32,7 @@ Philosophy: **Make logging effortless. Make progress obvious. Keep the lifter in
 - Notes / RPE: probably yes, optional (off until enabled). Not confirmed.
 - Old workouts: from **Fitbod**. The CSV import is built from the column layout in a public converter, not yet checked against a real export from Kevin. The `multiplier` column is ignored because its meaning is unconfirmed.
 - Changed 2 Nov 2026 (Kevin): **Google sign-in is required**, and data is backed up to the cloud per person (Supabase Postgres + Supabase Auth with Google; site stays on GitHub Pages). The phone's copy stays the working copy so logging works offline; sync runs when online. Backup files still work.
-- First open shows a one-time joke question ("Are you a sexy ass bitch?", both buttons say yes), then sign-in, then setup. Kevin's choice; keep it.
+- The joke question ("Are you a sexy ass bitch?", both buttons say yes) is Kevin's choice; keep it. Since 1.6.1 it shows at most once a day: the first open of each day on that phone (signed in or not), never during a workout in progress or while Google is sending someone back. The day is stored on the phone (`pr-forge:web:v1:greeted-on`), not synced. Before 1.6.1 it showed only before sign-in and could flash again after returning from Google.
 - Feature priorities (Must): log sets, saved workouts, last-time hints, history, lb/kg, offline, backup/restore, edit past workouts, custom exercises, per-arm/per-leg, PR banner, lift trends, personal records, plate calculator. Should: warm-ups, rest timer (make it optional), Today home, splash. Later: imports, notes/RPE, body weight, themes. Cut: PR share card.
 
 ## Product rules that must hold

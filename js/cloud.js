@@ -19,6 +19,30 @@
   var status = { state: 'idle', message: '' }; // idle | syncing | synced | offline | signin | error
   var running = false, again = false, timer = null, signingOut = false;
   var restoring = false; // first download after signing in on this phone
+  var failure = '';      // why the last sign-in couldn't finish, shown on the sign-in screen
+  var STARTED_KEY = ST.KEY + ':signin-started';
+  function where() {
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+    return standalone ? 'the home-screen app' : 'the browser';
+  }
+  function cleanUrl() {
+    if (/[?&](code|error)=/.test(location.search) || /access_token|error=/.test(location.hash)) {
+      try { history.replaceState(null, '', location.pathname); } catch (e) { /* ignore */ }
+    }
+  }
+  /** Google sent us back but no session came of it: stop waiting and say why. */
+  function signInFailed(err) {
+    if (session || !/[?&](code|error)=/.test(location.search)) return;
+    var started = null;
+    try { started = JSON.parse(localStorage.getItem(STARTED_KEY) || 'null'); } catch (e) { /* ignore */ }
+    if (err && /fetch|network|load failed/i.test(String(err.message))) failure = 'Sign-in didn’t finish: couldn’t reach the sign-in server. Check your connection and try again.';
+    else if (err && err.message) failure = 'Sign-in didn’t finish: ' + err.message + '.';
+    else if (!started) failure = 'Sign-in started somewhere else, so it can’t finish in ' + where() + '. Tap Continue with Google again from here.';
+    else failure = 'Sign-in started in ' + started.where + ' and came back to ' + where() + ', but it couldn’t finish. Tap Continue with Google to try again.';
+    try { localStorage.removeItem(STARTED_KEY); } catch (e) { /* ignore */ }
+    cleanUrl();
+    if (hooks.onData) hooks.onData();
+  }
   function doneRestoring() { if (restoring) { restoring = false; if (hooks.onData) hooks.onData(); } }
   var meta = loadMeta();
 
@@ -138,9 +162,9 @@
     meta.userId = uid;
     meta.email = s.user.email || '';
     saveMeta();
-    if (/[?&](code|error)=/.test(location.search) || /access_token|error=/.test(location.hash)) {
-      try { history.replaceState(null, '', location.pathname); } catch (e) { /* ignore */ }
-    }
+    failure = '';
+    try { localStorage.removeItem(STARTED_KEY); } catch (e) { /* ignore */ }
+    cleanUrl();
     if (first) {
       restoring = true;
       setTimeout(doneRestoring, 20000); // never leave someone on the loading screen
@@ -157,6 +181,12 @@
       client = root.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
         auth: { flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
       });
+      if (/[?&]code=/.test(location.search)) {
+        client.auth.initialize().then(function (r) {
+          setTimeout(function () { signInFailed(r && r.error); }, 500);
+        }, function (e) { signInFailed(e); });
+        setTimeout(function () { signInFailed(new Error('it took too long. Check your connection')); }, 20000);
+      }
       client.auth.onAuthStateChange(function (event, s) {
         // Supabase asks that no other Supabase calls run inside this callback.
         setTimeout(function () {
@@ -177,11 +207,14 @@
     /** True while the first download after signing in on this phone is running. */
     restoring: function () { return restoring; },
     signInError: function () {
+      if (failure) return failure;
       var m = /[?&#]error_description=([^&]*)/.exec(location.search + location.hash);
-      return m ? decodeURIComponent(m[1].replace(/\+/g, ' ')) : '';
+      return m ? 'Sign-in didn’t work: ' + decodeURIComponent(m[1].replace(/\+/g, ' ')) + '. Try again.' : '';
     },
     signIn: function () {
       if (!client) return Promise.reject(new Error('Sign-in could not load. Check your connection and reload.'));
+      failure = '';
+      try { localStorage.setItem(STARTED_KEY, JSON.stringify({ at: new Date().toISOString(), where: where() })); } catch (e) { /* ignore */ }
       return client.auth.signInWithOAuth({
         provider: 'google',
         options: { redirectTo: location.origin + location.pathname }

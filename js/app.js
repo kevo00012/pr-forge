@@ -286,7 +286,7 @@
   /** 'greet' or 'signin' while nobody has signed in on this phone, else ''. */
   function gate() {
     if (CLOUD.owner()) return '';
-    if (!V.greeted && !S.settings.setupDone && !S.active && !CLOUD.returningFromSignIn()) return 'greet';
+    if (!V.greeted && !S.settings.setupDone && !S.active && !CLOUD.returningFromSignIn() && !CLOUD.signInError()) return 'greet';
     return 'signin';
   }
 
@@ -763,7 +763,7 @@
       (busy ? '<p class="lede">Hang on a second.</p>' :
         '<p class="lede">Your workouts are kept on this phone and backed up to your own account, so they come back if you change phones. Only you can see them.</p>' +
         (hasData ? '<p class="small">The workouts already on this phone will be backed up when you sign in.</p>' : '') +
-        (err ? '<p class="small warn-text">Sign-in didn’t work: ' + esc(err) + '. Try again.</p>' : '') +
+        (err ? '<p class="small warn-text">' + esc(err) + '</p>' : '') +
         (navigator.onLine ? '' : '<p class="small warn-text">You’re offline. Signing in needs a connection the first time; after that the app works without one.</p>') +
         '<div class="foot-actions"><button class="btn primary block" data-act="sign-in">Continue with Google</button>' +
         '<a class="muted small center privacy-link" href="privacy.html">Privacy: what’s stored and how to delete it</a></div>') +

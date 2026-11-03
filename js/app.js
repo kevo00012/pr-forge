@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '1.5.5';
+  var VERSION = '1.6.0';
 
   var S = ST.load();
   var V = {
@@ -314,6 +314,7 @@
     else if (V.screen === 'lift' && V.liftId) body = viewLift();
     else if (V.screen === 'historyDetail' && findWorkout(V.historyId)) body = viewHistoryDetail();
     else if (V.screen === 'settings') body = viewSettings();
+    else if (V.screen === 'exercises') body = viewExercises();
     else {
       V.screen = null;
       body = ({ home: viewHome, workouts: viewWorkouts, progress: viewProgress, history: viewHistory })[V.tab]();
@@ -336,7 +337,7 @@
 
   function tabBar() {
     var logging = V.screen === 'workout';
-    var tabs = [['home', 'Today'], ['workouts', logging ? 'Workout' : 'Workouts'], ['progress', 'Progress'], ['history', 'History']];
+    var tabs = [['home', 'Today'], ['workouts', logging ? 'Workout' : 'Routines'], ['progress', 'Progress'], ['history', 'History']];
     var current = logging ? 'workouts' : V.tab;
     return '<nav class="tabbar" aria-label="Sections">' + tabs.map(function (t) {
       var on = current === t[0];
@@ -395,12 +396,12 @@
           '<h2 class="big">' + esc(t.name) + '</h2>' +
           (planRows ? '<ol class="plan">' + planRows + '</ol>' + more : '') +
           '<button class="btn primary block" data-act="start-template" data-id="' + esc(t.id) + '">Start workout' + icon('arrow', 'sm') + '</button>' +
-          '<div class="row-2"><button class="btn ghost" data-act="tab" data-tab="workouts">Pick another</button>' +
+          '<div class="row-2"><button class="btn ghost" data-act="tab" data-tab="workouts">Other routines</button>' +
           '<button class="btn ghost" data-act="start-empty">Empty workout</button></div></section>';
       } else {
-        upNext = '<section class="card hero"><span class="eyebrow on">Get started</span><h2 class="big">Build your first workout</h2>' +
-          '<p class="muted">Save the exercises you usually do, then start it from here in one tap.</p>' +
-          '<button class="btn primary block" data-act="template-new">Create a workout</button>' +
+        upNext = '<section class="card hero"><span class="eyebrow on">Get started</span><h2 class="big">Make your first routine</h2>' +
+          '<p class="muted">A routine is the exercises you usually do. Build one, or paste one Claude wrote for you, then start it from here in one tap.</p>' +
+          '<button class="btn primary block" data-act="routine-new">New routine</button>' +
           '<button class="btn ghost block" data-act="start-empty">Start an empty workout</button></section>';
       }
     }
@@ -438,11 +439,10 @@
         '<button class="btn primary block" data-act="start-template" data-id="' + esc(t.id) + '">Start</button></section>';
     }).join('');
     if (!list) {
-      list = '<section class="card empty"><p>No saved workouts yet.</p><p class="muted small">A saved workout is a list of exercises and how many sets you do of each. Starting one fills in last time’s numbers as hints.</p></section>';
+      list = '<section class="card empty"><p>No routines yet.</p><p class="muted small">A routine is a list of exercises and how many sets you do of each. Starting one fills in last time’s numbers as hints. Tap New to build one, paste one, or start an empty workout.</p></section>';
     }
-    var copy = '<button class="btn ghost block" data-act="plan-paste">Paste a workout</button>';
-    return '<header class="top row"><h1>Workouts</h1><div class="top-tools"><button class="btn primary sm" data-act="template-new">' + icon('plus', 'sm') + 'New</button>' + settingsButton() + '</div></header>' +
-      list + copy + '<button class="btn ghost block" data-act="start-empty">Start an empty workout</button>';
+    return '<header class="top row"><h1>Routines</h1><div class="top-tools"><button class="btn primary sm" data-act="routine-new">' + icon('plus', 'sm') + 'New</button>' + settingsButton() + '</div></header>' +
+      list;
   }
 
   function viewTemplateEditor() {
@@ -457,13 +457,13 @@
         '<button class="icon-btn" data-act="tpl-remove" data-i="' + i + '" aria-label="Remove">' + icon('close') + '</button></div></li>';
     }).join('');
     return '<header class="top row"><button class="btn ghost sm" data-act="template-cancel">' + icon('back', 'sm') + 'Back</button>' +
-      '<h1 class="h-sm">' + (d.id ? 'Edit workout' : 'New workout') + '</h1><span></span></header>' +
+      '<h1 class="h-sm">' + (d.id ? 'Edit routine' : 'New routine') + '</h1><span></span></header>' +
       '<section class="card"><label class="field"><span>Name</span><input data-field="tpl-name" maxlength="60" placeholder="e.g. Push day" value="' + esc(d.name) + '"></label></section>' +
       '<section class="card"><h2 class="card-title">Exercises</h2>' +
       (rows ? '<ul class="tpl-list">' + rows + '</ul>' : '<p class="muted small">No exercises yet.</p>') +
       '<button class="btn ghost block" data-act="tpl-add-ex">' + icon('plus', 'sm') + 'Add exercises</button></section>' +
-      '<button class="btn primary block" data-act="template-save">Save workout</button>' +
-      (d.id ? '<button class="btn danger-ghost block" data-act="template-delete">Delete workout</button>' : '');
+      '<button class="btn primary block" data-act="template-save">Save routine</button>' +
+      (d.id ? '<button class="btn danger-ghost block" data-act="template-delete">Delete routine</button>' : '');
   }
 
   // ----- Active workout -----
@@ -633,26 +633,77 @@
     if (counts.paused) lede.push(counts.paused + ' paused');
     var ledeHtml = trends.length ? '<p class="lede">' + trends.length + ' lift' + (trends.length === 1 ? '' : 's') + ' in the last 8 weeks: ' + lede.join(', ') + '.</p>' : '';
 
-    var prs = M.personalRecords(S.workouts);
-    var prHtml = prs.length ? prs.map(function (r) {
+    var view = V.progressView === 'records' ? 'records' : 'trends';
+    var seg = '<div class="seg seg-wide" role="tablist">' +
+      '<button class="' + (view === 'trends' ? 'on' : '') + '" data-act="progress-view" data-v="trends" aria-pressed="' + (view === 'trends') + '">Trends</button>' +
+      '<button class="' + (view === 'records' ? 'on' : '') + '" data-act="progress-view" data-v="records" aria-pressed="' + (view === 'records') + '">Records</button></div>';
+    var allEx = '<button class="btn ghost block" data-act="exercises-open">All exercises</button>';
+    var how = '<details class="how"><summary>How trends are worked out</summary><p class="muted small">Each session’s best set is turned into an estimated one-rep max: weight × (1 + reps ÷ 30). Lifts without weight use your most reps or longest hold instead. ' +
+      '<b>Progressing</b> = a new best within your last 3 sessions of that lift. <b>Holding</b> = 3–4 sessions since the best. <b>Stalled</b> = 5 or more. ' +
+      '<b>Down</b> = your last 2 sessions were over 5% under your best of the 6 weeks before them. <b>Paused</b> = no session in 14 days or more. ' +
+      'Warm-ups don’t count, and assisted lifts have no trend. Only lifts trained in the last 8 weeks are shown; every lift is under All exercises.</p></details>';
+    var header = '<header class="top row"><h1>Progress</h1>' + settingsButton() + '</header>' + seg;
+    if (view === 'records') {
+      return header + '<section class="card"><h2 class="card-title">Personal records</h2><ul class="prs">' + recordsHtml() + '</ul></section>' + allEx;
+    }
+    return header + ledeHtml + (trends.length ? how : '') + weeklyChart() + trendHtml + allEx;
+  }
+  /** Personal records, one row per lift; each opens that lift's page. */
+  function recordsHtml(onlyId) {
+    var prs = M.personalRecords(S.workouts).filter(function (r) { return !onlyId || r.exerciseId === onlyId; });
+    if (!prs.length) return '<li class="muted small">' + (onlyId ? 'No record yet. Imported and edited sessions don’t count as records.' : 'No records yet.') + '</li>';
+    return prs.map(function (r) {
       var ex = exById(r.exerciseId);
       var main = r.bestE1rm ? 'Est. 1RM ' + w(r.bestE1rm.e1rmLb) + ' <span class="muted">(' + w(r.bestE1rm.weightLb) + ' × ' + r.bestE1rm.reps + ')</span>'
         : r.maxSeconds ? r.maxSeconds.seconds + ' sec'
         : r.leastAssist ? 'Least help ' + w(r.leastAssist.weightLb) + ' <span class="muted">× ' + r.leastAssist.reps + '</span>'
         : r.maxBwReps ? r.maxBwReps.reps + ' reps' : '—';
       var heavy = r.heaviest ? 'Heaviest ' + w(r.heaviest.weightLb) + ' × ' + r.heaviest.reps + ' · ' : '';
-      return '<li class="pr"><strong>' + esc(ex.name) + (sideLabel(ex) ? ' <span class="plan-side">' + sideLabel(ex).toLowerCase() + '</span>' : '') + '</strong><span class="pr-main">' + main + '</span>' +
-        '<span class="muted small">' + heavy + r.sessions + ' session' + (r.sessions === 1 ? '' : 's') + '</span></li>';
-    }).join('') : '<li class="muted small">No records yet.</li>';
+      var inner = '<strong>' + esc(ex.name) + (sideLabel(ex) ? ' <span class="plan-side">' + sideLabel(ex).toLowerCase() + '</span>' : '') + '</strong><span class="pr-main">' + main + '</span>' +
+        '<span class="muted small">' + heavy + r.sessions + ' session' + (r.sessions === 1 ? '' : 's') + '</span>';
+      return onlyId ? '<li class="pr">' + inner + '</li>'
+        : '<li><button class="pr pr-btn" data-act="lift-open" data-id="' + esc(r.exerciseId) + '" data-from="progress">' + inner + '</button></li>';
+    }).join('');
+  }
 
-    return '<header class="top row"><h1>Progress</h1>' + settingsButton() + '</header>' +
-      ledeHtml + weeklyChart() + trendHtml +
-      '<details class="how"><summary>How trends are worked out</summary><p class="muted small">Each session’s best set is turned into an estimated one-rep max: weight × (1 + reps ÷ 30). Lifts without weight use your most reps or longest hold instead. ' +
-      '<b>Progressing</b> = a new best within your last 3 sessions of that lift. <b>Holding</b> = 3–4 sessions since the best. <b>Stalled</b> = 5 or more. ' +
-      '<b>Down</b> = your last 2 sessions were over 5% under your best of the 6 weeks before them. <b>Paused</b> = no session in 14 days or more. ' +
-      'Warm-ups don’t count, and assisted lifts have no trend. Only lifts trained in the last 8 weeks are shown.</p></details>' +
-      '<section class="card"><h2 class="card-title">Personal records</h2><ul class="prs">' + prHtml + '</ul></section>' +
-      '<button class="btn ghost block" data-act="settings-open">' + icon('settings', 'sm') + 'Settings, import &amp; backup</button>';
+  // ----- Exercises: every lift you've logged or made, each with its own page -----
+  function exerciseIndex() {
+    var info = {};
+    var touch = function (id) { return info[id] || (info[id] = { id: id, sessions: 0, last: null, routines: 0 }); };
+    M.finished(S.workouts).forEach(function (wk) {
+      var seen = {};
+      wk.exercises.forEach(function (e) {
+        if (seen[e.exerciseId] || !e.sets.some(function (st) { return st.done; })) return;
+        seen[e.exerciseId] = true;
+        var o = touch(e.exerciseId); o.sessions++;
+        if (!o.last || wk.startedAt > o.last) o.last = wk.startedAt;
+      });
+    });
+    S.templates.forEach(function (t) { t.exercises.forEach(function (e) { touch(e.exerciseId).routines++; }); });
+    S.customExercises.forEach(function (c) { touch(c.id); });
+    return Object.keys(info).map(function (id) { var o = info[id]; o.ex = exById(id); return o; })
+      .sort(function (a, b) { return (b.last || '').localeCompare(a.last || '') || a.ex.name.localeCompare(b.ex.name); });
+  }
+  function exerciseRowsHtml(q) {
+    var words = String(q || '').toLowerCase().split(/\s+/).filter(Boolean);
+    var rows = exerciseIndex().filter(function (o) {
+      var hay = (o.ex.name + ' ' + o.ex.muscle + ' ' + o.ex.equipment).toLowerCase();
+      return words.every(function (wd) { return hay.indexOf(wd) !== -1; });
+    });
+    if (!rows.length) return '<p class="muted small">' + (words.length ? 'No exercise matches “' + esc(q) + '”.' : 'Exercises you log, add to a routine or create show up here.') + '</p>';
+    return rows.map(function (o) {
+      var meta = o.sessions ? o.sessions + ' session' + (o.sessions === 1 ? '' : 's') + ' · last ' + relDay(o.last).toLowerCase()
+        : o.routines ? 'In ' + o.routines + ' routine' + (o.routines === 1 ? '' : 's') + ', not logged yet' : 'Not used yet';
+      return '<button class="ex-index-row" data-act="lift-open" data-id="' + esc(o.id) + '" data-from="exercises"><span class="paste-name"><strong>' + esc(o.ex.name) + '</strong>' +
+        '<span class="muted small">' + esc(o.ex.muscle) + (o.ex.custom ? ' · Custom' : '') + ' · ' + meta + '</span></span>' + icon('arrow', 'sm') + '</button>';
+    }).join('');
+  }
+  function viewExercises() {
+    return '<header class="top row"><button class="btn ghost sm" data-act="exercises-back">' + icon('back', 'sm') + 'Back</button><span></span></header>' +
+      '<header class="top"><h1>Exercises</h1></header>' +
+      '<p class="lede">Every exercise you’ve logged, put in a routine or created. Tap one for its chart, records and settings.</p>' +
+      '<input class="search" data-field="ex-q" type="search" placeholder="Search exercises" autocomplete="off" value="' + esc(V.exQ || '') + '">' +
+      '<section class="card ex-index" id="ex-index">' + exerciseRowsHtml(V.exQ) + '</section>';
   }
 
   // ----- Settings (gear icon in the top-right of each tab) -----
@@ -667,18 +718,20 @@
     var acct = accountHtml();
     return '<header class="top row"><button class="btn ghost sm" data-act="settings-back">' + icon('back', 'sm') + 'Back</button><span></span></header>' +
       '<header class="top"><h1>Settings</h1></header>' +
-      (acct ? '<section class="card">' + acct + '</section>' : '') +
+      '<section class="card"><h2 class="card-title">Account &amp; backup</h2>' + acct +
+      '<div class="setting col"><span>Backup file</span><p class="muted small">Your workouts back up to your account automatically. You can also save a copy as a file, or restore one (this replaces everything, here and in your account).</p>' +
+      '<div class="row-2"><button class="btn ghost" data-act="export">Export backup</button><button class="btn ghost" data-act="import">Restore backup</button></div></div></section>' +
       '<section class="card"><h2 class="card-title">Logging</h2>' +
       '<div class="setting"><span>Units</span><div class="seg"><button class="' + (unit() === 'lb' ? 'on' : '') + '" data-act="set-unit" data-v="lb" aria-pressed="' + (unit() === 'lb') + '">lb</button>' +
       '<button class="' + (unit() === 'kg' ? 'on' : '') + '" data-act="set-unit" data-v="kg" aria-pressed="' + (unit() === 'kg') + '">kg</button></div></div>' +
       '<div class="setting col"><span>Rest timer after each set</span><div class="chips">' + restChips + '</div></div>' +
-      '<label class="setting"><span>Bar weight (' + unit() + ')</span><input class="bar-input" data-field="bar" inputmode="decimal" autocomplete="off" value="' + U.fmtNum(barFor(unit())) + '"></label></section>' +
-      '<section class="card"><h2 class="card-title">Import from Fitbod</h2>' +
-      '<p class="muted small">Export your workouts from Fitbod’s settings as a CSV file, then choose it here. Imported workouts never count as PRs, but later sessions have to beat them. To turn one into a saved workout, open it in History and tap Save as a workout.</p>' +
-      '<button class="btn ghost block" data-act="fitbod-pick">Choose Fitbod file</button>' + importsHtml() + '</section>' +
-      '<section class="card"><h2 class="card-title">Backup file</h2>' +
-      '<p class="muted small">Your workouts back up to your account automatically. You can also save a copy as a file, or restore one (this replaces everything, here and in your account).</p>' +
-      '<div class="row-2"><button class="btn ghost" data-act="export">Export backup</button><button class="btn ghost" data-act="import">Restore backup</button></div></section>' +
+      '<label class="setting"><span>Bar weight (' + unit() + ')</span><input class="bar-input" data-field="bar" inputmode="decimal" autocomplete="off" value="' + U.fmtNum(barFor(unit())) + '"></label>' +
+      '<button class="btn ghost block" data-act="exercises-open">Exercises: how each is logged, your own exercises</button></section>' +
+      '<section class="card"><h2 class="card-title">Import</h2>' +
+      '<div class="setting col"><span>Past workouts from Fitbod</span><p class="muted small">Export your workouts from Fitbod’s settings as a CSV file, then choose it here. Imported workouts never count as PRs, but later sessions have to beat them. To turn one into a routine, open it in History and tap Save as routine.</p>' +
+      '<button class="btn ghost block" data-act="fitbod-pick">Choose Fitbod file</button>' + importsHtml() + '</div>' +
+      '<div class="setting col"><span>Routines from a plan</span><p class="muted small">Paste a plan or choose a PDF, text or CSV file, for example one Claude wrote for you.</p>' +
+      '<button class="btn ghost block" data-act="plan-paste">Paste or import a routine</button></div></section>' +
       '<button class="btn danger-ghost block" data-act="erase-all">Erase all my data</button>' +
       '<p class="muted small center">PR Forge web ' + VERSION + ' · ' + S.workouts.length + ' workouts saved · <a href="privacy.html">Privacy</a></p>' +
       fileInputs();
@@ -750,11 +803,29 @@
       '<text x="' + Math.min(last[0], W - R) + '" y="' + Math.max(12, last[1] - 10).toFixed(1) + '" text-anchor="end">' + metricValue(metric, points[points.length - 1].value) + '</text></svg>';
   }
 
+  /** How it's logged, plus rename/delete for your own exercises. Shown on every exercise page. */
+  function liftManageHtml(ex) {
+    var kind = exKind(ex.id);
+    var label = (EX.TRACKING.filter(function (t) { return t.id === kind; })[0] || {}).label || kind;
+    return '<section class="card"><h2 class="card-title">Settings</h2>' +
+      '<div class="setting"><span>Logged as<br><span class="muted small">' + esc(label) + '. Applies the next time you add it.</span></span>' +
+      '<button class="btn ghost sm" data-act="ex-default-type" data-id="' + esc(ex.id) + '">Change</button></div>' +
+      (ex.custom ? '<div class="row-2"><button class="btn ghost" data-act="custom-rename" data-id="' + esc(ex.id) + '">Rename</button>' +
+        '<button class="btn danger-ghost" data-act="custom-delete" data-id="' + esc(ex.id) + '">Delete</button></div>' : '') + '</section>';
+  }
+  function exerciseInUse(id) {
+    var inWk = function (wk) { return wk.exercises.some(function (e) { return e.exerciseId === id; }); };
+    return S.workouts.filter(inWk).length + (S.active && inWk(S.active) ? 1 : 0) + S.templates.filter(inWk).length;
+  }
   function viewLift() {
     var trend = M.liftTrends(S.workouts, new Date(), 36500).filter(function (t) { return t.exerciseId === V.liftId; })[0];
-    var back = '<header class="top row"><button class="btn ghost sm" data-act="lift-back">' + icon('back', 'sm') + 'Progress</button><span></span></header>';
-    if (!trend) return back + '<section class="card empty"><p class="muted small">No sessions for this lift yet.</p></section>';
+    var back = '<header class="top row"><button class="btn ghost sm" data-act="lift-back">' + icon('back', 'sm') + (V.liftFrom === 'exercises' ? 'Exercises' : 'Progress') + '</button><span></span></header>';
     var ex = exById(V.liftId);
+    if (!trend) {
+      return back + '<header class="top"><h1>' + esc(ex.name) + '</h1>' + (sideLabel(ex) ? '<span class="muted">' + sideLabel(ex) + '</span>' : '') + '</header>' +
+        '<section class="card empty"><p class="muted small">No sessions logged yet' + (exKind(ex.id) === 'assisted' ? ', and assisted lifts have no trend' : '') + '. Its chart and records appear after you log it.</p></section>' +
+        liftManageHtml(ex);
+    }
     var cutoff = Date.now() - 42 * 86400000;
     var shown = V.liftRange === 'all' ? trend.points : trend.points.filter(function (p) { return new Date(p.date).getTime() >= cutoff; });
     var rangeBtn = function (id, text) {
@@ -776,7 +847,9 @@
       '<section class="card"><div class="pr-chart-head"><h2 class="card-title">Each session’s best</h2><div class="seg">' + rangeBtn('recent', '6 wk') + rangeBtn('all', 'All') + '</div></div>' +
       (shown.length ? liftChart(shown, trend.metric, trend.status) : '<p class="muted small">No sessions in the last 6 weeks.</p>') + '</section>' +
       ideas +
+      '<section class="card"><h2 class="card-title">Record</h2><ul class="prs">' + recordsHtml(ex.id) + '</ul></section>' +
       '<section class="card"><h2 class="card-title">Sessions</h2><ul class="session-list">' + sessions + '</ul></section>' +
+      liftManageHtml(ex) +
       '<p class="muted small tip">Trends are an early signal, not a diagnosis. Fatigue, technique and rep range all affect them.</p>';
   }
 
@@ -861,7 +934,7 @@
       '<button class="' + (unit() === 'kg' ? 'on' : '') + '" data-act="set-unit" data-v="kg" aria-pressed="' + (unit() === 'kg') + '">kg</button></div></div>' +
       '<div class="setting col"><span>Rest timer after each set</span><div class="chips">' + restChips + '</div></div></section>' +
       '<div class="foot-actions"><button class="btn primary block" data-act="setup-done">Get started</button>' +
-      '<div class="row-2"><button class="btn ghost" data-act="fitbod-pick">Import Fitbod</button><button class="btn ghost" data-act="import">Restore backup</button></div></div>' +
+      '<button class="btn ghost block" data-act="fitbod-pick">Import past workouts from Fitbod</button></div>' +
       fileInputs();
   }
 
@@ -982,14 +1055,14 @@
         '<span class="muted">' + d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) + '</span></header>' +
         stats + wins + log +
         '<div class="foot-actions"><button class="btn primary block" data-act="summary-done">Done</button>' +
-        '<div class="row-2"><button class="btn ghost" data-act="history-edit">Edit this workout</button><button class="btn ghost" data-act="history-to-template">Save as a workout</button></div></div>';
+        '<div class="row-2"><button class="btn ghost" data-act="history-edit">Edit this workout</button><button class="btn ghost" data-act="history-to-template">Save as routine</button></div></div>';
     }
     var flag = wk.imported ? 'Imported' : wk.edited ? 'Edited' : '';
     return '<header class="top row"><button class="btn ghost sm" data-act="history-back">' + icon('back', 'sm') + 'History</button><span></span></header>' +
       '<header class="top"><p class="eyebrow">' + d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) + (flag ? ' · ' + flag : '') + '</p><h1>' + esc(wk.name) + '</h1></header>' +
       stats + wins + log +
       '<div class="foot-actions"><button class="btn ghost block" data-act="history-edit">Edit this workout</button>' +
-      '<button class="btn ghost block" data-act="history-to-template">Save as a workout</button>' +
+      '<button class="btn ghost block" data-act="history-to-template">Save as routine</button>' +
       '<button class="btn danger-ghost block" data-act="history-delete">Delete this workout</button></div>';
   }
   function prWin(wk, evt) {
@@ -1253,7 +1326,7 @@
       var raw = {};
       try { raw = JSON.parse(String(reader.result)); } catch (e) { /* already validated */ }
       var when = raw.exportedAt ? ' from ' + new Date(raw.exportedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
-      confirmBox('Restore this backup?', 'Backup' + esc(when) + ': ' + next.workouts.length + ' workouts, ' + next.templates.length + ' saved workouts.<br>' +
+      confirmBox('Restore this backup?', 'Backup' + esc(when) + ': ' + next.workouts.length + ' workouts, ' + next.templates.length + ' routines.<br>' +
         'This replaces everything on this device (' + S.workouts.length + ' workouts now).', 'Replace my data', true).then(function (ok) {
         if (!ok) return;
         try { localStorage.setItem(ST.KEY + ':before-restore', JSON.stringify(S)); } catch (e) { /* ignore */ }
@@ -1283,7 +1356,7 @@
       var dup = fresh.stats.duplicateDays;
       if (!all.stats.workouts) { toast('No workouts found in that file', 'warn', 3500); return; }
       if (!dup) {
-        confirmBox('Import from Fitbod?', importSummary(fresh) + '<br>Weights are shown in ' + unit() + '. You can undo this in Progress.', 'Import')
+        confirmBox('Import from Fitbod?', importSummary(fresh) + '<br>Weights are shown in ' + unit() + '. You can undo this in Settings.', 'Import')
           .then(function (ok) { if (ok) applyImport(fresh, batchId, false); });
         return;
       }
@@ -1292,7 +1365,7 @@
       var text = 'This file has <b>' + all.stats.workouts + ' workout' + (all.stats.workouts === 1 ? '' : 's') + '</b>. ' +
         dup + ' of those day' + (dup === 1 ? ' is' : 's are') + ' already imported' + (n ? ', and ' + n + ' ' + (n === 1 ? 'is' : 'are') + ' new.' : ', and none are new.') +
         '<br><b>Replace</b> swaps the imported copies of those days for this file’s version (any edits you made to them are lost). ' +
-        'Workouts you logged in PR Forge are never touched.<br>Weights are shown in ' + unit() + '. You can undo this in Progress.';
+        'Workouts you logged in PR Forge are never touched.<br>Weights are shown in ' + unit() + '. You can undo this in Settings.';
       var choices = [];
       if (n) choices.push({ label: 'Add the ' + n + ' new day' + (n === 1 ? '' : 's'), value: 'new', cls: 'primary' });
       choices.push({ label: n ? 'Replace ' + dup + ' and add ' + n : 'Replace the ' + dup + ' imported day' + (dup === 1 ? '' : 's'), value: 'replace', cls: n ? 'ghost' : 'primary' });
@@ -1306,9 +1379,9 @@
   }
   // ----- Paste a workout (e.g. one Claude wrote) -----
   function pastePlanForm(text) {
-    openModal('<h2>Paste a workout</h2>' +
-      '<p class="muted small">Paste a workout plan, for example one Claude wrote for you. One exercise per line works best, like “Bench press 4x8”. A short line above the exercises becomes the workout’s name; paste several days at once and each becomes its own workout.</p>' +
-      '<label class="field"><span>Workout plan</span><textarea id="plan-text" rows="9" placeholder="Upper body&#10;Bench press 4x8&#10;Bent-over row 4x8&#10;Overhead press 3x10&#10;Pull-ups 3xAMRAP"></textarea></label>' +
+    openModal('<h2>Paste or import a routine</h2>' +
+      '<p class="muted small">Paste a plan, for example one Claude wrote for you, or choose a file. One exercise per line works best, like “Bench press 4x8”. A short line above the exercises becomes the routine’s name; paste several days at once and each becomes its own routine.</p>' +
+      '<label class="field"><span>Plan</span><textarea id="plan-text" rows="9" placeholder="Upper body&#10;Bench press 4x8&#10;Bent-over row 4x8&#10;Overhead press 3x10&#10;Pull-ups 3xAMRAP"></textarea></label>' +
       '<div class="row-2"><button class="btn ghost sm" data-act="plan-file-pick">Choose a file</button><button class="btn ghost sm" data-act="plan-copy-tip">Tip for Claude</button></div>' +
       '<p class="muted small">Files: PDF, text (.txt, .md) or CSV. A CSV needs an Exercise column; Sets, Reps and a Workout or Day column are optional. For a photo or a Word file, copy the text and paste it here.</p>' +
       '<input type="file" id="plan-file" accept=".pdf,.txt,.text,.md,.markdown,.csv,application/pdf,text/plain,text/markdown,text/csv" hidden>' +
@@ -1372,7 +1445,7 @@
   }
   function planPreview(res) {
     var html = res.workouts.map(function (w, wi) {
-      return '<section class="paste-wk"><h3>' + esc(w.name || 'Workout ' + (S.templates.length + wi + 1)) + '</h3><ul class="paste-list">' + w.exercises.map(function (e) {
+      return '<section class="paste-wk"><h3>' + esc(w.name || 'Routine ' + (S.templates.length + wi + 1)) + '</h3><ul class="paste-list">' + w.exercises.map(function (e) {
         var known = e.exerciseId ? exById(e.exerciseId) : null;
         return '<li><span class="paste-name"><strong>' + esc(known ? known.name : e.name) + '</strong>' +
           (known ? '' : '<span class="muted small">New exercise, added to your list</span>') + '</span>' +
@@ -1380,7 +1453,7 @@
       }).join('') + '</ul></section>';
     }).join('');
     var n = res.workouts.length;
-    openModal('<h2>' + (n === 1 ? 'Save this workout?' : 'Save ' + n + ' workouts?') + '</h2>' + html +
+    openModal('<h2>' + (n === 1 ? 'Save this routine?' : 'Save ' + n + ' routines?') + '</h2>' + html +
       (res.skipped.length ? '<p class="muted small">Left out ' + (res.skipped.length === 1 ? '1 line that isn’t an exercise' : res.skipped.length + ' lines that aren’t exercises, such as') + ': “' + esc(res.skipped[0].slice(0, 60)) + '”.</p>' : '') +
       '<p class="muted small">Sets are saved; rep targets aren’t kept yet, and last time’s numbers fill in as hints when you start. You can edit everything afterwards.</p>' +
       '<div class="modal-actions"><button class="btn ghost" data-act="plan-back">Back</button><button class="btn primary" data-act="plan-save">Save</button></div>');
@@ -1542,7 +1615,7 @@
     'template-save': function () {
       var d = V.tplDraft;
       d.name = (d.name || '').trim();
-      if (!d.name) { toast('Give the workout a name', 'warn'); return; }
+      if (!d.name) { toast('Give the routine a name', 'warn'); return; }
       if (!d.exercises.length) { toast('Add at least one exercise', 'warn'); return; }
       if (d.id) S.templates = S.templates.map(function (t) { return t.id === d.id ? d : t; });
       else { d.id = uid(); S.templates.push(d); }
@@ -1651,8 +1724,51 @@
     },
     'edit-ex-add': function () { V.picker = { target: 'edit', q: '', muscle: '', selected: {} }; render(); },
 
-    'lift-open': function (el) { V.liftId = el.dataset.id; V.liftRange = 'recent'; V.screen = 'lift'; render(); },
-    'lift-back': function () { V.liftId = null; V.screen = null; V.tab = 'progress'; render(); },
+    'lift-open': function (el) { V.liftId = el.dataset.id; V.liftFrom = el.dataset.from || 'progress'; V.liftRange = 'recent'; V.screen = 'lift'; render(); },
+    'progress-view': function (el) { V.progressView = el.dataset.v === 'records' ? 'records' : 'trends'; render(); },
+    'exercises-open': function () { V.exFrom = V.screen; V.screen = 'exercises'; render(); },
+    'exercises-back': function () { V.screen = V.exFrom === 'settings' ? 'settings' : null; V.exFrom = null; if (!V.screen) V.tab = 'progress'; render(); },
+    'ex-default-type': function (el) {
+      var id = el.dataset.id, current = exKind(id);
+      V.modal = { resolve: null, exId: id };
+      openModal('<h2>How do you log it?</h2><p class="muted small">Used the next time you add ' + esc(exById(id).name) + ' to a workout. Past workouts keep how they were logged.</p><div class="type-list">' + EX.TRACKING.map(function (t) {
+        return '<button class="type-opt' + (t.id === current ? ' on' : '') + '" data-act="ex-default-type-set" data-id="' + esc(id) + '" data-v="' + t.id + '" aria-pressed="' + (t.id === current) + '"><strong>' + t.label + '</strong><span class="muted small">' + t.hint + '</span></button>';
+      }).join('') + '</div><button class="btn ghost block" data-act="modal-cancel">Cancel</button>');
+    },
+    'ex-default-type-set': function (el) {
+      S.settings.exerciseTypes[el.dataset.id] = el.dataset.v;
+      closeModal(); commit(); toast('Saved');
+    },
+    'custom-rename': function (el) {
+      var c = S.customExercises.filter(function (x) { return x.id === el.dataset.id; })[0]; if (!c) return;
+      V.modal = { resolve: null };
+      openModal('<h2>Rename exercise</h2><label class="field"><span>Name</span><input id="cx-rename" maxlength="80" value="' + esc(c.name) + '"></label>' +
+        '<p class="muted small">The new name shows everywhere, including past workouts.</p>' +
+        '<div class="modal-actions"><button class="btn ghost" data-act="modal-cancel">Cancel</button><button class="btn primary" data-act="custom-rename-save" data-id="' + esc(c.id) + '">Save</button></div>');
+    },
+    'custom-rename-save': function (el) {
+      var c = S.customExercises.filter(function (x) { return x.id === el.dataset.id; })[0];
+      var name = (document.getElementById('cx-rename').value || '').trim();
+      if (!c) return;
+      if (!name) { toast('Enter a name', 'warn'); return; }
+      c.name = name.slice(0, 80); closeModal(); commit(); toast('Renamed');
+    },
+    'custom-delete': function (el) {
+      var id = el.dataset.id, c = S.customExercises.filter(function (x) { return x.id === id; })[0]; if (!c) return;
+      var uses = exerciseInUse(id);
+      if (uses) { toast('Used in ' + uses + ' workout' + (uses === 1 ? '' : 's') + ' or routine' + (uses === 1 ? '' : 's') + ', so it can’t be deleted. Rename it instead, or remove it from those first.', 'warn', 5000); return; }
+      confirmBox('Delete “' + esc(c.name) + '”?', 'It isn’t used in any workout or routine.', 'Delete', true).then(function (ok) {
+        if (!ok) return;
+        S.customExercises = S.customExercises.filter(function (x) { return x.id !== id; });
+        delete S.settings.exerciseTypes[id];
+        V.screen = 'exercises'; V.liftId = null; commit(); toast('Deleted');
+      });
+    },
+    'lift-back': function () {
+      V.liftId = null;
+      if (V.liftFrom === 'exercises') V.screen = 'exercises'; else { V.screen = null; V.tab = 'progress'; }
+      render();
+    },
     'lift-range': function (el) { V.liftRange = el.dataset.v === 'all' ? 'all' : 'recent'; render(); },
     'vol-tap': function (el) {
       var read = document.querySelector('[data-vol-read]');
@@ -1698,6 +1814,17 @@
       V.summary = null;
       draftFromWorkout(wk);
     },
+    'routine-new': function () {
+      choiceBox('New routine', '', [
+        { label: 'Build from scratch', value: 'scratch', cls: 'primary' },
+        { label: 'Paste or import a plan (text, PDF, CSV)', value: 'paste' },
+        { label: 'Start an empty workout instead', value: 'empty' }
+      ]).then(function (v) {
+        if (v === 'scratch') { V.tplDraft = { id: null, name: '', exercises: [] }; V.screen = 'template'; render(); }
+        else if (v === 'paste') { V.planFileName = ''; pastePlanForm(V.planText || ''); }
+        else if (v === 'empty') startWorkout('Workout', null, []);
+      });
+    },
     'plan-paste': function () { V.planFileName = ''; pastePlanForm(V.planText || ''); },
     'plan-copy-tip': function () {
       var tip = 'Write it as a plain list, one exercise per line, like "Bench press 4x8". Put the workout name on its own line above.';
@@ -1722,7 +1849,7 @@
       var res = V.planParsed; if (!res) return;
       var made = {}, saved = [];
       res.workouts.forEach(function (w, wi) {
-        var t = { id: 't-' + uid(), name: (w.name || 'Workout ' + (S.templates.length + 1)).slice(0, 60), exercises: [] };
+        var t = { id: 't-' + uid(), name: (w.name || 'Routine ' + (S.templates.length + 1)).slice(0, 60), exercises: [] };
         w.exercises.forEach(function (e) {
           var id = e.exerciseId;
           if (!id) {
@@ -1742,7 +1869,7 @@
       closeModal();
       V.tab = 'workouts'; V.screen = null;
       commit();
-      toast(saved.length === 1 ? 'Saved “' + esc(saved[0].name) + '”' : 'Saved ' + saved.length + ' workouts');
+      toast(saved.length === 1 ? 'Saved “' + esc(saved[0].name) + '”' : 'Saved ' + saved.length + ' routines');
     },
     'settings-open': function () { V.screen = 'settings'; V.picker = null; render(); },
     'settings-back': function () { V.screen = null; render(); },
@@ -1755,7 +1882,7 @@
     'export': exportBackup,
     'import': function () { var f = document.getElementById('import-file'); if (f) { f.value = ''; f.click(); } },
     'erase-all': function () {
-      confirmBox('Erase everything?', 'All workouts, saved workouts and settings will be deleted from this phone and from your account backup. Export a backup file first if you might want them.', 'Erase all', true).then(function (ok) {
+      confirmBox('Erase everything?', 'All workouts, routines and settings will be deleted from this phone and from your account backup. Export a backup file first if you might want them.', 'Erase all', true).then(function (ok) {
         if (!ok) return;
         S = ST.defaults(); V.screen = null; V.tab = 'home'; V.rest = null; V.edit = null; commit();
       });
@@ -1787,6 +1914,10 @@
         var plates = document.querySelector('[data-plates]');
         if (plates) plates.innerHTML = platesInner(n != null ? n : parseNum(el.placeholder), S.active.unit);
       }
+    } else if (f === 'ex-q') {
+      V.exQ = el.value;
+      var box = document.getElementById('ex-index');
+      if (box) box.innerHTML = exerciseRowsHtml(V.exQ);
     } else if (f === 'edit-name' && V.edit) {
       V.edit.draft.name = el.value;
     } else if (f === 'edit-date' && V.edit) {

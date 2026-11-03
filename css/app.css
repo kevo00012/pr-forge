@@ -388,6 +388,16 @@ input::placeholder { color: var(--ghost); opacity: 1; }
 .seg { display: inline-flex; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 3px; }
 .seg button { min-width: 54px; height: 44px; border-radius: 9px; font-weight: 600; font-size: 14px; color: var(--muted); }
 .seg button.on { background: var(--text); color: var(--bg); font-weight: 700; }
+.seg-wide { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+.seg-wide button { min-width: 0; }
+.pr-btn { width: 100%; text-align: left; min-height: 44px; }
+.prs li .pr-btn { border-top: 1px solid var(--line); padding: 12px 0; }
+.prs li:first-child .pr-btn { border-top: 0; padding-top: 0; }
+.prs li:last-child .pr-btn { padding-bottom: 0; }
+.ex-index { gap: 0; padding-top: 4px; padding-bottom: 4px; }
+.ex-index-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 56px; padding: 10px 0; text-align: left; border-top: 1px solid var(--line); }
+.ex-index-row:first-child { border-top: 0; }
+.ex-index-row .icon { color: var(--muted); flex: none; }
 
 /* History + workout summary */
 .month { font-size: 13px; font-weight: 700; color: var(--muted); letter-spacing: .16em; line-height: 1.2; margin-top: 8px; }

@@ -13,12 +13,14 @@ Philosophy: **Make logging effortless. Make progress obvious. Keep the lifter in
   - `tests/logic.test.js`, `tests/sync.test.js`: run `node --test` in this folder (Node 20+). 35 tests, all passing as of 2 Nov 2026.
   - `supabase/schema.sql`: database tables, row level security and grants; run in Supabase → SQL Editor. Project URL `https://pvtcqdtqycihlontmirl.supabase.co`; the publishable key is in `js/cloud.js` (public by design). Never commit the secret key, database password or Google client secret.
 - Requirements doc (PRD): https://claude.ai/artifact/BRwXUQBAEp5rhWqbmuTFsv
+- Brand guide ("PR Forge Brand", 3 Nov 2026): https://claude.ai/artifact/Afwbg2BV4CiH7j4hCP2wCk. Logo versions and when to use each, colour tokens with contrast notes, type scale, layout, voice and tone. Clear-space and minimum-size rules in it were proposed by Claude, not yet confirmed by Kevin. Update it when colours, type or logo files change.
 - Redesign canvas ("Forge Scoreboard"): https://claude.ai/artifact/AXMdMVNRanCEWaTCV2Czys
   - Copies of the screen designs are in `design/` (`*.dc.html`). They are design mockups, not app code: read them for layout, type, spacing, and colours.
   - `tools/serve.js`: local dev server (`node tools/serve.js` → http://localhost:8000/; `pr-forge` in `.claude/launch.json`).
 - Repo: https://github.com/kevo00012/pr-forge (public, branch `main`). Commits use the GitHub no-reply email, set in this repo's git config. Never commit backups or Fitbod exports; `.gitignore` blocks them.
 - Hosting: GitHub Pages, live at https://kevo00012.github.io/pr-forge/ since 1 Nov 2026. It deploys from `main` (root) on every push, so anything pushed goes live.
 - Sign-in: Google Cloud project "PR Forge", Google Auth Platform, OAuth web client "PR Forge web". JavaScript origins `https://kevo00012.github.io` and `http://localhost:8000`; redirect URI `https://pvtcqdtqycihlontmirl.supabase.co/auth/v1/callback`. Branding has the home page and `privacy.html` links. Published ("In production") on 2 Nov 2026, so any Google account can sign in. Supabase URL Configuration: Site URL `https://kevo00012.github.io/pr-forge/`, redirect URLs that plus `http://localhost:8000/`.
+- Sign-in flow: `js/cloud.js` uses Supabase's **implicit** flow (since 1.5.2), not PKCE. PKCE hung on iPhone (Safari and home-screen app) because the code verifier saved before leaving for Google was missing on return; implicit carries the session in `#access_token`. Don't switch back without testing on an iPhone. After a return from Google the app stops waiting within ~0.5 s of supabase-js finishing (20 s cap) and shows why on the sign-in screen.
 - Privacy page: `privacy.html` (linked from the sign-in screen and Google Branding). Update it, and its date, if what's stored or where changes.
 
 ## Decisions (from the PRD, answered by Kevin)
@@ -53,7 +55,7 @@ Philosophy: **Make logging effortless. Make progress obvious. Keep the lifter in
 
 ## Next work (in order)
 
-0. Done (2 Nov 2026, app 1.5.0, PR #2): Google sign-in + cloud sync. Confirmed by Kevin on an iPhone: sign-in from the home-screen app, workouts uploading to Supabase, and restore on a second device.
+0. Done (2 Nov 2026, app 1.5.0, PR #2): Google sign-in + cloud sync. Confirmed by Kevin on an iPhone: sign-in from the home-screen app, workouts uploading to Supabase, and restore on a second device. 3 Nov (1.5.2, PR #5): sign-in hung on "Signing you in…" on iPhone after re-adding the home-screen app; fixed by the implicit flow, confirmed working by Kevin. Also 1.5.1 (PR #4): splash and app icons from the logo without the badge square / lettering, confirmed on iPhone.
    - To do: replace the Google client secret (it was shared in chat on 2 Nov); add a new secret in Google, paste it into Supabase → Google provider, then delete the old one.
    - Left as is (Kevin's choice): Google's sign-in page says "to continue to pvtcqdtqycihlontmirl.supabase.co". Free fix if wanted later: Google's own sign-in button + `signInWithIdToken`, which should show `kevo00012.github.io`, but it needs re-testing in the iPhone home-screen app.
 1. Done (1 Nov 2026, app 1.1.0): Forge Scoreboard applied to all screens. Not built from the mockups: Progress time-range toggle (8 wk/6 mo/All), "usual 3 sessions" goal line. Barlow is bundled in `fonts/` (latin subset, Fontsource 5.3.0, OFL) and precached by `sw.js`.

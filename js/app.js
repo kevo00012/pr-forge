@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '1.5.1';
+  var VERSION = '1.5.2';
 
   var S = ST.load();
   var V = {
@@ -279,7 +279,7 @@
   function viewKey() {
     var g = gate();
     if (g) return g;
-    if (needsSetup()) return 'setup';
+    if (needsSetup()) return CLOUD.restoring() ? 'restoring' : 'setup';
     return V.screen ? V.screen + ':' + (V.screen === 'lift' ? V.liftId : V.historyId || '') : 'tab:' + V.tab;
   }
   function needsSetup() { return !S.settings.setupDone && !S.active; }
@@ -294,6 +294,7 @@
     var body;
     var g = gate();
     if (g) body = g === 'greet' ? viewGreet() : viewSignIn();
+    else if (needsSetup() && CLOUD.restoring()) body = viewRestoring();
     else if (needsSetup()) body = viewSetup();
     else if (V.screen === 'workout' && S.active) body = viewWorkout();
     else if (V.screen === 'template' && V.tplDraft) body = viewTemplateEditor();
@@ -767,6 +768,12 @@
         '<div class="foot-actions"><button class="btn primary block" data-act="sign-in">Continue with Google</button>' +
         '<a class="muted small center privacy-link" href="privacy.html">Privacy: what’s stored and how to delete it</a></div>') +
       '</section>';
+  }
+
+  // Shown on a phone with no data yet, while the first download after signing in runs.
+  function viewRestoring() {
+    return '<section class="greet"><img class="setup-logo" src="icons/logo.png" alt="PR Forge logo" onerror="this.remove()">' +
+      '<h1>Loading your workouts…</h1><p class="lede">Getting everything from your account. This only happens the first time on this phone.</p></section>';
   }
 
   // ----- Account and backup status (Progress → Settings) -----
@@ -1645,7 +1652,8 @@
     render();
     var splash = document.getElementById('splash');
     var t0 = window.__prfStart || Date.now();
-    var wait = Math.max(0, 3000 - (Date.now() - t0)); // branding shows for at least 3 s
+    // Branding shows for at least 3 s, except when Google has just sent someone back: they saw it moments ago.
+    var wait = /[?&](code|error)=/.test(location.search) ? 0 : Math.max(0, 3000 - (Date.now() - t0));
     setTimeout(function () {
       app.hidden = false;
       splash.classList.add('out');

@@ -18,6 +18,8 @@
   var hooks = { getState: null, setState: null, onData: null, onStatus: null };
   var status = { state: 'idle', message: '' }; // idle | syncing | synced | offline | signin | error
   var running = false, again = false, timer = null, signingOut = false;
+  var restoring = false; // first download after signing in on this phone
+  function doneRestoring() { if (restoring) { restoring = false; if (hooks.onData) hooks.onData(); } }
   var meta = loadMeta();
 
   function loadMeta() {
@@ -88,7 +90,7 @@
   function sync() {
     if (!client || !meta.userId || signingOut) return Promise.resolve();
     if (running) { again = true; return Promise.resolve(); }
-    if (!navigator.onLine) { setStatus('offline'); return Promise.resolve(); }
+    if (!navigator.onLine) { setStatus('offline'); doneRestoring(); return Promise.resolve(); }
     if (!session) {
       // e.g. the sign-in expired while offline: try to refresh it now that we're online.
       return client.auth.getSession().then(function (r) {
@@ -112,6 +114,7 @@
       else setStatus('error', err && err.message);
     }).then(function () {
       running = false;
+      doneRestoring();
       if (again) { again = false; schedule(500); }
     });
   }
@@ -138,7 +141,11 @@
     if (/[?&](code|error)=/.test(location.search) || /access_token|error=/.test(location.hash)) {
       try { history.replaceState(null, '', location.pathname); } catch (e) { /* ignore */ }
     }
-    if (first && hooks.onData) hooks.onData();
+    if (first) {
+      restoring = true;
+      setTimeout(doneRestoring, 20000); // never leave someone on the loading screen
+      if (hooks.onData) hooks.onData();
+    }
     schedule(0);
   }
 
@@ -167,6 +174,8 @@
     owner: function () { return meta.userId ? { userId: meta.userId, email: meta.email } : null; },
     /** True while a sign-in redirect is being finished. */
     returningFromSignIn: function () { return /[?&]code=/.test(location.search); },
+    /** True while the first download after signing in on this phone is running. */
+    restoring: function () { return restoring; },
     signInError: function () {
       var m = /[?&#]error_description=([^&]*)/.exec(location.search + location.hash);
       return m ? decodeURIComponent(m[1].replace(/\+/g, ' ')) : '';

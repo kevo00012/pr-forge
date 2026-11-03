@@ -1653,7 +1653,7 @@
     var splash = document.getElementById('splash');
     var t0 = window.__prfStart || Date.now();
     // Branding shows for at least 3 s, except when Google has just sent someone back: they saw it moments ago.
-    var wait = /[?&](code|error)=/.test(location.search) ? 0 : Math.max(0, 3000 - (Date.now() - t0));
+    var wait = /[?&](code|error)=/.test(location.search) || /(access_token|error)=/.test(location.hash) ? 0 : Math.max(0, 3000 - (Date.now() - t0));
     setTimeout(function () {
       app.hidden = false;
       splash.classList.add('out');

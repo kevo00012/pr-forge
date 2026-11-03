@@ -25,14 +25,16 @@
     var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
     return standalone ? 'the home-screen app' : 'the browser';
   }
+  /** True when Google has just sent someone back (tokens or an error in the address). */
+  function isReturn() { return /[?&](code|error)=/.test(location.search) || /(access_token|error)=/.test(location.hash); }
   function cleanUrl() {
-    if (/[?&](code|error)=/.test(location.search) || /access_token|error=/.test(location.hash)) {
+    if (isReturn()) {
       try { history.replaceState(null, '', location.pathname); } catch (e) { /* ignore */ }
     }
   }
   /** Google sent us back but no session came of it: stop waiting and say why. */
   function signInFailed(err) {
-    if (session || !/[?&](code|error)=/.test(location.search)) return;
+    if (session || !isReturn()) return;
     var started = null;
     try { started = JSON.parse(localStorage.getItem(STARTED_KEY) || 'null'); } catch (e) { /* ignore */ }
     if (err && /fetch|network|load failed/i.test(String(err.message))) failure = 'Sign-in didn’t finish: couldn’t reach the sign-in server. Check your connection and try again.';
@@ -179,9 +181,13 @@
       hooks = h;
       if (!root.supabase || !root.supabase.createClient) { setStatus('error', 'Sign-in could not load.'); return; }
       client = root.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-        auth: { flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+        auth: {
+          // Implicit flow (Supabase's default): Google's reply carries the session itself, so it doesn't
+          // depend on a key saved before leaving, which iPhone Safari and home-screen apps can lose.
+          flowType: 'implicit', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true
+        }
       });
-      if (/[?&]code=/.test(location.search)) {
+      if (isReturn()) {
         client.auth.initialize().then(function (r) {
           setTimeout(function () { signInFailed(r && r.error); }, 500);
         }, function (e) { signInFailed(e); });
@@ -203,7 +209,7 @@
     /** Who this phone's data belongs to, or null if nobody has signed in. Works offline. */
     owner: function () { return meta.userId ? { userId: meta.userId, email: meta.email } : null; },
     /** True while a sign-in redirect is being finished. */
-    returningFromSignIn: function () { return /[?&]code=/.test(location.search); },
+    returningFromSignIn: function () { return isReturn() && !/error/.test(location.search + location.hash); },
     /** True while the first download after signing in on this phone is running. */
     restoring: function () { return restoring; },
     signInError: function () {

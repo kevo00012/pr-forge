@@ -66,7 +66,9 @@ Philosophy: **Make logging effortless. Make progress obvious. Keep the lifter in
 6. Done (1 Nov 2026, app 1.4.0): first-open setup, plus exercise types (reps only, added weight, assistance, seconds) and Progress extras (Down/Paused, lift detail, weekly chart).
 7. Done (1 Nov 2026): published to GitHub Pages. Home-screen app confirmed working on an iPhone (2 Nov). Still to confirm: airplane-mode test (log offline, then check it uploads once back online).
 
-Not built yet from the old Expo app: lifetime milestones, weekly recap card, pinned lifts, duplicate saved workout, target reps, load a past workout as new, exercise info/cues, equipment filter in the picker, custom plate sets, rest-done notification, Strong/Hevy import, CSV export, themes.
+Settings (1.5.4): a gear (sliders icon) in the top-right of every tab opens a Settings screen (`V.screen = 'settings'`, `viewSettings` in `js/app.js`) with account, logging settings, Fitbod import, backup file and erase; Progress no longer holds settings. Workouts has "Copy a past workout", which turns any finished workout (including imported Fitbod days) into a saved workout; warm-ups aren't counted as sets.
+
+Not built yet from the old Expo app: lifetime milestones, weekly recap card, pinned lifts, duplicate saved workout, target reps, exercise info/cues, equipment filter in the picker, custom plate sets, rest-done notification, Strong/Hevy import, CSV export, themes.
 
 ## How Kevin wants code work done
 

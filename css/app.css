@@ -76,6 +76,14 @@ ul, ol { list-style: none; margin: 0; padding: 0; }
 .screen.no-tabs { padding-bottom: calc(24px + var(--safe-b)); }
 .top { display: flex; flex-direction: column; gap: 2px; }
 .top.row { flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; }
+.center a { color: inherit; }
+.top-tools { display: flex; align-items: center; gap: 10px; flex: none; }
+.top-tools .wordmark-img { margin-bottom: 0; }
+.pick-list { display: flex; flex-direction: column; }
+.pick-row { display: flex; flex-direction: column; gap: 2px; min-height: 56px; padding: 10px 0; text-align: left; border-top: 1px solid var(--line); min-width: 0; }
+.pick-row:first-child { border-top: 0; }
+.pick-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.pick-top strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .top.end { align-items: flex-end; }
 .sticky-top {
   position: sticky; top: 0; z-index: 5; background: var(--bg);

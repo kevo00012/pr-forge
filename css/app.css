@@ -427,6 +427,7 @@ input::placeholder { color: var(--ghost); opacity: 1; }
 #modal-root[hidden] { display: none; }
 .modal { position: relative; width: 100%; max-width: 420px; background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 20px; display: flex; flex-direction: column; gap: 12px; max-height: 90vh; overflow-y: auto; }
 .modal p { line-height: 1.45; }
+.modal-choices { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
 .modal-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; margin-top: 4px; }
 
 /* Toasts */

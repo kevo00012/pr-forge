@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '1.5.2';
+  var VERSION = '1.5.3';
 
   var S = ST.load();
   var V = {
@@ -272,6 +272,17 @@
       openModal('<h2>' + esc(title) + '</h2>' + (text ? '<p class="muted">' + text + '</p>' : '') +
         '<div class="modal-actions"><button class="btn ghost" data-act="modal-cancel">Cancel</button>' +
         '<button class="btn ' + (danger ? 'danger' : 'primary') + '" data-act="modal-ok">' + esc(okLabel || 'OK') + '</button></div>');
+    });
+  }
+
+  /** Several labelled choices; resolves to the chosen value, or false on Cancel. */
+  function choiceBox(title, text, choices) {
+    return new Promise(function (resolve) {
+      V.modal = { resolve: resolve, choices: choices };
+      openModal('<h2>' + esc(title) + '</h2>' + (text ? '<p class="muted">' + text + '</p>' : '') +
+        '<div class="modal-choices">' + choices.map(function (c, i) {
+          return '<button class="btn block ' + (c.cls || 'ghost') + '" data-act="modal-choice" data-i="' + i + '">' + esc(c.label) + '</button>';
+        }).join('') + '<button class="btn ghost block" data-act="modal-cancel">Cancel</button></div>');
     });
   }
 
@@ -1247,42 +1258,87 @@
       var batchId = 'fb-' + uid();
       var existing = {};
       S.workouts.forEach(function (x) { if (x.sourceKey) existing[x.sourceKey] = true; });
-      var result;
+      var opts = { exercises: allExercises(), targetUnit: unit(), uid: uid, batchId: batchId };
+      var fresh, all;
       try {
-        result = IM.parseFitbod(String(reader.result), { exercises: allExercises(), targetUnit: unit(), uid: uid, batchId: batchId, existingKeys: existing });
+        fresh = IM.parseFitbod(String(reader.result), Object.assign({ existingKeys: existing }, opts)); // days not imported yet
+        all = IM.parseFitbod(String(reader.result), opts);                                             // every day in the file
       } catch (e) { toast(esc(e.message), 'warn', 4000); return; }
-      var st = result.stats;
-      if (!st.workouts) {
-        toast(st.duplicateDays ? 'Those days are already imported' : 'No workouts found in that file', 'warn', 3500);
+      var dup = fresh.stats.duplicateDays;
+      if (!all.stats.workouts) { toast('No workouts found in that file', 'warn', 3500); return; }
+      if (!dup) {
+        confirmBox('Import from Fitbod?', importSummary(fresh) + '<br>Weights are shown in ' + unit() + '. You can undo this in Progress.', 'Import')
+          .then(function (ok) { if (ok) applyImport(fresh, batchId, false); });
         return;
       }
-      var range = shortDate(result.workouts[0].startedAt) + ' ' + new Date(result.workouts[0].startedAt).getFullYear() + ' to ' +
-        shortDate(result.workouts[st.workouts - 1].startedAt) + ' ' + new Date(result.workouts[st.workouts - 1].startedAt).getFullYear();
-      var created = st.created.slice(0, 5).map(esc).join(', ') + (st.created.length > 5 ? ' and ' + (st.created.length - 5) + ' more' : '');
-      confirmBox('Import from Fitbod?',
-        '<b>' + st.workouts + ' workout' + (st.workouts === 1 ? '' : 's') + '</b>, ' + st.sets + ' sets, ' + range + '.<br>' +
-        st.matched + ' exercise' + (st.matched === 1 ? '' : 's') + ' matched to your list.' +
-        (st.created.length ? '<br>' + st.created.length + ' added as custom: ' + created + '.' : '') +
-        (st.skipped ? '<br>' + st.skipped + ' row' + (st.skipped === 1 ? '' : 's') + ' skipped (no reps or time, such as distance-only cardio).' : '') +
-        (st.duplicateDays ? '<br>' + st.duplicateDays + ' day' + (st.duplicateDays === 1 ? '' : 's') + ' already imported, so left alone.' : '') +
-        '<br>Weights are shown in ' + unit() + '. You can undo this in Progress.', 'Import').then(function (ok) {
-        if (!ok) return;
-        var before = { workouts: S.workouts, customs: S.customExercises, imports: S.imports, setup: S.settings.setupDone };
-        S.workouts = S.workouts.concat(result.workouts);
-        S.customExercises = S.customExercises.concat(result.customs);
-        S.imports = S.imports.concat([{ id: batchId, source: 'Fitbod', at: new Date().toISOString(), workouts: st.workouts }]);
-        S.settings.setupDone = true;
-        if (!ST.save(S)) {
-          S.workouts = before.workouts; S.customExercises = before.customs; S.imports = before.imports; S.settings.setupDone = before.setup;
-          toast('Not enough storage on this device, so nothing was imported.', 'warn', 4000);
-          return;
-        }
-        render();
-        toast('Imported ' + st.workouts + ' workout' + (st.workouts === 1 ? '' : 's'));
+      // Some days are already here: let the person add only the new ones, or replace those days with this file's version.
+      var n = fresh.stats.workouts;
+      var text = 'This file has <b>' + all.stats.workouts + ' workout' + (all.stats.workouts === 1 ? '' : 's') + '</b>. ' +
+        dup + ' of those day' + (dup === 1 ? ' is' : 's are') + ' already imported' + (n ? ', and ' + n + ' ' + (n === 1 ? 'is' : 'are') + ' new.' : ', and none are new.') +
+        '<br><b>Replace</b> swaps the imported copies of those days for this file’s version (any edits you made to them are lost). ' +
+        'Workouts you logged in PR Forge are never touched.<br>Weights are shown in ' + unit() + '. You can undo this in Progress.';
+      var choices = [];
+      if (n) choices.push({ label: 'Add the ' + n + ' new day' + (n === 1 ? '' : 's'), value: 'new', cls: 'primary' });
+      choices.push({ label: n ? 'Replace ' + dup + ' and add ' + n : 'Replace the ' + dup + ' imported day' + (dup === 1 ? '' : 's'), value: 'replace', cls: n ? 'ghost' : 'primary' });
+      choiceBox('Import from Fitbod?', text, choices).then(function (v) {
+        if (v === 'new') applyImport(fresh, batchId, false);
+        else if (v === 'replace') applyImport(all, batchId, true);
       });
     };
     reader.onerror = function () { toast('Couldn’t read that file', 'warn'); };
     reader.readAsText(file);
+  }
+  function importSummary(result) {
+    var st = result.stats;
+    var range = shortDate(result.workouts[0].startedAt) + ' ' + new Date(result.workouts[0].startedAt).getFullYear() + ' to ' +
+      shortDate(result.workouts[st.workouts - 1].startedAt) + ' ' + new Date(result.workouts[st.workouts - 1].startedAt).getFullYear();
+    var created = st.created.slice(0, 5).map(esc).join(', ') + (st.created.length > 5 ? ' and ' + (st.created.length - 5) + ' more' : '');
+    return '<b>' + st.workouts + ' workout' + (st.workouts === 1 ? '' : 's') + '</b>, ' + st.sets + ' sets, ' + range + '.<br>' +
+      st.matched + ' exercise' + (st.matched === 1 ? '' : 's') + ' matched to your list.' +
+      (st.created.length ? '<br>' + st.created.length + ' added as custom: ' + created + '.' : '') +
+      (st.skipped ? '<br>' + st.skipped + ' row' + (st.skipped === 1 ? '' : 's') + ' skipped (no reps or time, such as distance-only cardio).' : '');
+  }
+  /** Adds an import. With replace, imported workouts for the same days are removed first (logged workouts never are). */
+  function applyImport(result, batchId, replace) {
+    var st = result.stats;
+    var before = { workouts: S.workouts, customs: S.customExercises, imports: S.imports, setup: S.settings.setupDone };
+    var replaced = 0;
+    var keep = S.workouts;
+    if (replace) {
+      var keys = {};
+      result.workouts.forEach(function (x) { keys[x.sourceKey] = true; });
+      keep = S.workouts.filter(function (x) { return !(x.sourceKey && keys[x.sourceKey]); });
+      replaced = S.workouts.length - keep.length;
+    }
+    S.workouts = keep.concat(result.workouts);
+    S.customExercises = S.customExercises.concat(result.customs);
+    S.imports = S.imports.concat([{ id: batchId, source: 'Fitbod', at: new Date().toISOString(), workouts: st.workouts }]);
+    if (replace) tidyImports();
+    S.settings.setupDone = true;
+    if (!ST.save(S)) {
+      S.workouts = before.workouts; S.customExercises = before.customs; S.imports = before.imports; S.settings.setupDone = before.setup;
+      toast('Not enough storage on this device, so nothing was imported.', 'warn', 4000);
+      return;
+    }
+    CLOUD.changed();
+    render();
+    toast(replaced ? 'Replaced ' + replaced + ' and added ' + (st.workouts - replaced) + ' workout' + (st.workouts - replaced === 1 ? '' : 's')
+      : 'Imported ' + st.workouts + ' workout' + (st.workouts === 1 ? '' : 's'));
+  }
+  /** After a replace: recount each import, drop ones with nothing left, and their custom exercises nothing uses. */
+  function tidyImports() {
+    var count = {};
+    S.workouts.forEach(function (x) { if (x.importBatch) count[x.importBatch] = (count[x.importBatch] || 0) + 1; });
+    var gone = {};
+    S.imports = S.imports.filter(function (b) {
+      if (!count[b.id]) { gone[b.id] = true; return false; }
+      b.workouts = count[b.id];
+      return true;
+    });
+    var used = {};
+    S.workouts.concat(S.active ? [S.active] : []).forEach(function (x) { x.exercises.forEach(function (e) { used[e.exerciseId] = true; }); });
+    S.templates.forEach(function (t) { t.exercises.forEach(function (e) { used[e.exerciseId] = true; }); });
+    S.customExercises = S.customExercises.filter(function (e) { return !(e.importBatch && gone[e.importBatch]) || used[e.id]; });
   }
 
   function undoImport(id) {
@@ -1451,6 +1507,7 @@
       toast('Added “' + esc(ex.name) + '”');
     },
     'modal-ok': function () { closeModal(true); },
+    'modal-choice': function (el) { var c = V.modal && V.modal.choices && V.modal.choices[+el.dataset.i]; closeModal(c ? c.value : false); },
     'modal-cancel': function () { closeModal(false); },
 
     'history-open': function (el) { V.historyId = el.dataset.id; V.screen = 'historyDetail'; V.tab = 'history'; render(); },

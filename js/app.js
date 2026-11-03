@@ -297,6 +297,7 @@
   function needsSetup() { return !S.settings.setupDone && !S.active; }
   /** 'greet' or 'signin' while nobody has signed in on this phone, else ''. */
   function gate() {
+    if (CLOUD.handedOff()) return 'handedoff';
     if (shouldGreet()) return 'greet';
     return CLOUD.owner() ? '' : 'signin';
   }
@@ -323,7 +324,7 @@
   function render() {
     var body;
     var g = gate();
-    if (g) body = g === 'greet' ? viewGreet() : viewSignIn();
+    if (g) body = g === 'greet' ? viewGreet() : g === 'handedoff' ? viewHandedOff() : viewSignIn();
     else if (needsSetup() && CLOUD.restoring()) body = viewRestoring();
     else if (needsSetup()) body = viewSetup();
     else if (V.screen === 'workout' && S.active) body = viewWorkout();
@@ -881,11 +882,19 @@
       (busy ? '<p class="lede">Hang on a second.</p>' :
         '<p class="lede">Your workouts are kept on this phone and backed up to your own account, so they come back if you change phones. Only you can see them.</p>' +
         (hasData ? '<p class="small">The workouts already on this phone will be backed up when you sign in.</p>' : '') +
+        (CLOUD.waitingForSignIn() && !err ? '<p class="small">Signed in with Google already? Tap Done in that window to come back; this screen updates by itself in a few seconds.</p>' : '') +
         (err ? '<p class="small warn-text">' + esc(err) + '</p>' : '') +
         (navigator.onLine ? '' : '<p class="small warn-text">You’re offline. Signing in needs a connection the first time; after that the app works without one.</p>') +
         '<div class="foot-actions"><button class="btn primary block" data-act="sign-in">Continue with Google</button>' +
         '<a class="muted small center privacy-link" href="privacy.html">Privacy: what’s stored and how to delete it</a></div>') +
       '</section>';
+  }
+
+  // Shown in the browser sheet iPhone opens for Google, after it has passed the sign-in to the app.
+  function viewHandedOff() {
+    return '<section class="greet"><h1>You’re signed in</h1>' +
+      '<p class="lede">Tap <strong>Done</strong> (or close this window) to go back to PR Forge. It will finish signing you in there.</p>' +
+      '<p class="muted small">If PR Forge still shows Sign in after a few seconds, tap Continue with Google there once more.</p></section>';
   }
 
   // Shown on a phone with no data yet, while the first download after signing in runs.
@@ -1810,7 +1819,7 @@
     },
     'sign-in': function () {
       if (!navigator.onLine) { toast('You’re offline. Connect to sign in.', 'warn'); return; }
-      CLOUD.signIn().catch(function (e) { toast(esc(e.message || 'Sign-in didn’t start. Try again.'), 'warn', 3500); });
+      CLOUD.signIn().then(function () { render(); }, function (e) { toast(esc(e.message || 'Sign-in didn’t start. Try again.'), 'warn', 3500); });
     },
     'sync-now': function () {
       if (!navigator.onLine) { toast('You’re offline. Changes back up when you reconnect.'); return; }

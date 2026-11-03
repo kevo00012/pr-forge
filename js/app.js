@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '1.5.4';
+  var VERSION = '1.5.5';
 
   var S = ST.load();
   var V = {
@@ -1708,7 +1708,9 @@
     'plan-preview': function () {
       var el = document.getElementById('plan-text');
       V.planText = el ? el.value : '';
-      var res = IM.parseWorkoutText(V.planText, { exercises: allExercises() });
+      var res;
+      try { res = IM.parseWorkoutText(V.planText, { exercises: allExercises() }); }
+      catch (e) { toast(esc(e.message), 'warn', 4500); return; }
       if (!res.workouts.length) { toast('No exercises found. Put one per line, like “Bench press 4x8”.', 'warn', 4000); return; }
       if (V.planFileName && !res.workouts[0].name) res.workouts[0].name = V.planFileName; // a file with no title line: use its name
       V.planParsed = res;

@@ -438,3 +438,12 @@ test('workout CSV: columns found by name in any order, a Workout/Day column spli
   assert.deepEqual(plan('Day,Name,Reps,Sets,Rest\n1,Overhead press,8,3,90s\n2,Deadlift,5,1,3 min\n'),
     [['Day 1', [['overhead-press', 3, '8']]], ['Day 2', [['deadlift', 1, '5']]]]);
 });
+
+test('pasted CSV text (with or without its header) reads like a CSV file', () => {
+  const body = 'Upper,Bench Press,4,6-8\nUpper,Pull-ups,3,AMRAP\nLower,Back Squat,5,5\nLower,Leg Curl,3,12';
+  const plan = (t) => importers.parseWorkoutText(t, { exercises: ex.BUILT_IN }).workouts.map((w) => [w.name, w.exercises.map((e) => [e.exerciseId, e.sets])]);
+  const want = [['Upper', [['bench-press', 4], ['pull-up', 3]]], ['Lower', [['back-squat', 5], ['lying-leg-curl', 3]]]];
+  assert.deepEqual(plan('Workout,Exercise,Sets,Reps\n' + body), want);
+  assert.deepEqual(plan(body), want);
+  assert.equal(importers.looksLikeCsv('Upper body\nBench press 4x8, then rows 3x10, then curls.\nSquat 5x5'), false);
+});

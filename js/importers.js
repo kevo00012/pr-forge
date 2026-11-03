@@ -249,7 +249,16 @@
    * A line with sets ("Bench press 4x8") is an exercise; a short line without them ("Upper Body", "Day 2: Pull") starts
    * a new workout; a line that is just a known exercise name gets 3 sets; anything else (warm-up notes, rest times) is skipped.
    */
+  /** True when most lines look like CSV rows ("Upper,Bench Press,4,8"), e.g. a CSV's text pasted into the box. */
+  function looksLikeCsv(text) {
+    var lines = String(text || '').split(/\r?\n/).map(function (l) { return l.trim(); }).filter(Boolean);
+    if (lines.length < 2) return false;
+    var rows = lines.filter(function (l) { return (l.match(/,/g) || []).length >= 2 && !/[.!?]$/.test(l); });
+    return rows.length >= lines.length * 0.6;
+  }
+
   function parseWorkoutText(text, options) {
+    if (looksLikeCsv(text)) text = csvToPlanText(text); // pasted CSV text reads like a CSV file
     var match = planMatcher(options.exercises);
     var workouts = [], skipped = [];
     var cur = null;
@@ -347,12 +356,31 @@
       throw new Error('This is a Fitbod history export. Use Settings → Import from Fitbod for it.');
     }
     var cEx = column(head, /^(exercise|exercise name|name|movement|lift)$/i);
-    if (cEx < 0) return rows.map(function (r) { return '| ' + r.join(' | ') + ' |'; }).join('\n');
-    var cSets = column(head, /^(sets?|# ?sets|number of sets)$/i);
-    var cReps = column(head, /^(reps?|rep range|repetitions|target reps)$/i);
-    var cDay = column(head, /^(workout|workout name|day|session|routine|template)$/i);
+    var cSets, cReps, cDay, body;
+    if (cEx >= 0) {
+      cSets = column(head, /^(sets?|# ?sets|number of sets)$/i);
+      cReps = column(head, /^(reps?|rep range|repetitions|target reps)$/i);
+      cDay = column(head, /^(workout|workout name|day|session|routine|template)$/i);
+      body = rows.slice(1);
+    } else {
+      // No header: text columns are the workout (if its values repeat) and the exercise; then sets, then reps.
+      var width = Math.max.apply(null, rows.map(function (r) { return r.length; }));
+      var isText = [];
+      for (var c = 0; c < width; c++) {
+        var cells = rows.map(function (r) { return String(r[c] || '').trim(); }).filter(Boolean);
+        isText[c] = cells.length > 0 && cells.filter(function (v) { return !/^\d/.test(v); }).length > cells.length / 2;
+      }
+      var textCols = isText.map(function (t, i) { return t ? i : -1; }).filter(function (i) { return i >= 0; });
+      if (!textCols.length) return '';
+      var firstVals = rows.map(function (r) { return String(r[textCols[0]] || '').trim(); });
+      var repeats = Object.keys(firstVals.reduce(function (m, v) { m[v] = 1; return m; }, {})).length < firstVals.length;
+      if (textCols.length >= 2 && repeats) { cDay = textCols[0]; cEx = textCols[1]; } else { cDay = -1; cEx = textCols[0]; }
+      cSets = -1; cReps = -1;
+      for (var k = cEx + 1; k < width; k++) if (!isText[k] && cSets < 0) { cSets = k; cReps = k + 1 < width ? k + 1 : -1; }
+      body = rows;
+    }
     var out = [], lastDay = null;
-    rows.slice(1).forEach(function (r) {
+    body.forEach(function (r) {
       var name = String(r[cEx] || '').trim();
       if (!name) return;
       if (cDay >= 0) {
@@ -366,7 +394,7 @@
     return out.join('\n');
   }
 
-  var api = { parseCsv: parseCsv, parseFitbod: parseFitbod, parseWorkoutText: parseWorkoutText, pdfItemsToText: pdfItemsToText, csvToPlanText: csvToPlanText };
+  var api = { parseCsv: parseCsv, parseFitbod: parseFitbod, parseWorkoutText: parseWorkoutText, looksLikeCsv: looksLikeCsv, pdfItemsToText: pdfItemsToText, csvToPlanText: csvToPlanText };
   root.PRF = root.PRF || {};
   root.PRF.importers = api;
   if (typeof module === 'object' && module.exports) module.exports = api;

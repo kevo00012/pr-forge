@@ -447,3 +447,15 @@ test('pasted CSV text (with or without its header) reads like a CSV file', () =>
   assert.deepEqual(plan(body), want);
   assert.equal(importers.looksLikeCsv('Upper body\nBench press 4x8, then rows 3x10, then curls.\nSquat 5x5'), false);
 });
+
+test('shared routine text reads back as the same routine, equipment and custom names included', () => {
+  const name = {}; ex.BUILT_IN.forEach((e) => { name[e.id] = e.name; });
+  const t = { name: 'Heavy Upper Body Push and Arms Day', exercises: [{ exerciseId: 'bench-press', sets: 4 }, { exerciseId: 'db-curl', sets: 3 }, { exerciseId: 'cable-curl', sets: 2 }, { exerciseId: 'c-1', sets: 1 }] };
+  const text = importers.routineToText(t, (id) => name[id] || 'Zercher Wiggle (pause)');
+  assert.match(text, /^Routine: Heavy Upper Body Push and Arms Day\nBench Press \(Barbell\): 4 sets/);
+  const back = importers.parseWorkoutText(text, { exercises: ex.BUILT_IN });
+  assert.equal(back.skipped.length, 0);
+  assert.equal(back.workouts[0].name, 'Heavy Upper Body Push and Arms Day');
+  assert.deepEqual(back.workouts[0].exercises.map((e) => [e.exerciseId, e.sets]), [['bench-press', 4], ['db-curl', 3], ['cable-curl', 2], [null, 1]]);
+  assert.equal(back.workouts[0].exercises[3].name, 'Zercher Wiggle (pause)');
+});

@@ -461,6 +461,7 @@ input::placeholder { color: var(--ghost); opacity: 1; }
 }
 .toast.out { opacity: 0; transform: translateY(-8px); }
 .diag p { overflow-wrap: anywhere; }
+.tpl-btns { display: flex; gap: 8px; flex: none; }
 .update-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px 10px 16px; background: var(--raised); border: 1px solid var(--line-2); border-radius: 14px; font-size: 14px; line-height: 1.35; color: var(--soft); }
 .update-bar strong { color: var(--text); }
 .update-bar .btn { flex: none; }

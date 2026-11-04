@@ -462,6 +462,20 @@ input::placeholder { color: var(--ghost); opacity: 1; }
 .toast.out { opacity: 0; transform: translateY(-8px); }
 .diag p { overflow-wrap: anywhere; }
 .tpl-btns { display: flex; gap: 8px; flex: none; }
+.spark { display: block; width: 112px; height: 64px; align-self: center; overflow: visible; }
+.spark polyline { fill: none; stroke: var(--soft); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.spark circle { fill: var(--soft); stroke: var(--surface); stroke-width: 2; }
+.spark circle.spark-progressing { fill: var(--accent); }
+.spark circle.spark-stalled, .spark circle.spark-down { fill: var(--warn); }
+.month-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.att-list { gap: 0; padding-top: 4px; padding-bottom: 4px; }
+.att-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 56px; padding: 10px 0; text-align: left; border-top: 1px solid var(--line); }
+.att-row:first-child { border-top: 0; }
+.att-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: none; }
+.att-num { font-family: var(--cond); font-weight: 700; font-size: 17px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.att-num small { font-size: 13px; color: var(--muted); font-weight: 600; }
+.att-more { width: 100%; min-height: 44px; border-top: 1px solid var(--line); color: var(--soft); font-weight: 600; font-size: 14px; }
+.ex-index-row .pill { flex: none; }
 .update-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px 10px 16px; background: var(--raised); border: 1px solid var(--line-2); border-radius: 14px; font-size: 14px; line-height: 1.35; color: var(--soft); }
 .update-bar strong { color: var(--text); }
 .update-bar .btn { flex: none; }

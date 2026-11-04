@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '1.6.6';
+  var VERSION = '1.6.7';
 
   var S = ST.load();
   var V = {
@@ -887,8 +887,13 @@
         (navigator.onLine ? '' : '<p class="small warn-text">You’re offline. Signing in needs a connection the first time; after that the app works without one.</p>') +
         '<div class="foot-actions"><button class="btn primary block" data-act="sign-in">Continue with Google</button>' +
         '<a class="muted small center privacy-link" href="privacy.html">Privacy: what’s stored and how to delete it</a></div>' +
-        '<p class="muted small diag">' + esc(CLOUD.diagnostics()) + '</p>') +
+        diagHtml()) +
       '</section>';
+  }
+
+  /** Sign-in diagnostics, folded away: open it only when sign-in misbehaves. */
+  function diagHtml() {
+    return '<details class="how diag"><summary>Sign-in details</summary><p class="muted small">' + esc(CLOUD.diagnostics()) + '</p></details>';
   }
 
   // Shown in the browser sheet iPhone opens for Google, after it has passed the sign-in to the app.
@@ -927,7 +932,7 @@
       '<span data-sync-status>' + esc(syncText()) + '</span></p>' +
       (expired ? '<button class="btn primary block" data-act="sign-in">Sign in again</button>' : '') +
       '<div class="row-2"><button class="btn ghost" data-act="sync-now">Back up now</button><button class="btn ghost" data-act="sign-out">Sign out</button></div>' +
-      '<p class="muted small diag">' + esc(CLOUD.diagnostics()) + '</p></div>';
+      diagHtml() + '</div>';
   }
   function showSyncStatus() {
     var el = document.querySelector('[data-sync-status]');

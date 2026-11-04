@@ -38,7 +38,7 @@ Run `node tools/serve.js` and open http://localhost:8000/. Google sign-in needs 
 
 ### Updating later
 
-Upload the changed files to the repo again (same "Add file → Upload files" button, then commit). Before uploading, bump the version in `sw.js` (`CACHE = 'pr-forge-web-1.6.6'`) so phones fetch the new files.
+Upload the changed files to the repo again (same "Add file → Upload files" button, then commit). Before uploading, bump the version in `sw.js` (`CACHE = 'pr-forge-web-1.6.7'`) so phones fetch the new files.
 
 ## Your data
 

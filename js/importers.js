@@ -267,7 +267,8 @@
       var line = cleanLine(raw);
       if (!line) return;
       if (/^\|?\s*:?-{3,}/.test(line)) return;                    // markdown table divider
-      var name = null, sets = null, reps = '';
+      if (/^shared from pr forge\b/i.test(line)) return;            // the footer of a shared routine
+      var name = null, sets = null, reps = '', exact = '';
       if (line.indexOf('|') !== -1) {                             // markdown table row: | Exercise | Sets | Reps |
         var cells = line.split('|').map(function (c) { return c.trim(); }).filter(Boolean);
         var nameCell = cells.filter(function (c) { return /[a-z]/i.test(c) && !/^(\d+\s*[-–]\s*)?\d+\s*(reps?|s|sec)?$/i.test(c); })[0];
@@ -282,26 +283,35 @@
       }
       if (name === null) {
         var m = SETS_RE.exec(line);
+        var tail = /[\s:–—-]+(\d{1,2})\s*sets?\s*$/i.exec(line);       // "Curl (Dumbbell): 4 sets", as PR Forge shares it
         if (m && (m[2] || /sets?/i.test(m[0]))) {
           sets = parseInt(m[1], 10);
           reps = m[2] ? m[2].replace(/\s+/g, '') : '';
-          name = tidyName(line.slice(0, m.index)) || tidyName(line.slice(m.index + m[0].length).replace(/^\s*(?:reps?)?\s*/, ''));
+          exact = line.slice(0, m.index);
+          name = tidyName(exact) || tidyName(line.slice(m.index + m[0].length).replace(/^\s*(?:reps?)?\s*/, ''));
+        } else if (tail) {
+          sets = parseInt(tail[1], 10);
+          exact = line.slice(0, tail.index);
+          name = tidyName(exact);
         }
+        // Keep "(Dumbbell)" etc. for matching and naming: it's often the only thing telling two lifts apart.
+        exact = exact.replace(/[–—:|,;]+\s*$/, '').replace(/\s+[-–—]\s*$/, '').replace(/\s+/g, ' ').trim();
       }
       if (name !== null) {
         if (!name) { skipped.push(line); return; }
         if (/^(warm[- ]?up|cool[- ]?down|rest|stretch)/i.test(name) && !match(name)) { skipped.push(line); return; }
         if (!cur) start('');
-        cur.exercises.push({ name: name.slice(0, 80), exerciseId: match(name), sets: Math.min(20, Math.max(1, sets || 3)), reps: reps });
+        var exId = (exact && match(exact)) || match(name);
+        cur.exercises.push({ name: (exId || !exact ? name : exact).slice(0, 80), exerciseId: exId, sets: Math.min(20, Math.max(1, sets || 3)), reps: reps });
         return;
       }
       var bare = tidyName(line);
       var id = bare && bare.split(' ').length <= 6 ? match(bare) : null;
       if (id) { if (!cur) start(''); cur.exercises.push({ name: bare, exerciseId: id, sets: 3, reps: '' }); return; }
       var words = bare.split(' ').length;
-      var looksLikeTitle = words <= 6 && !/[.!?]$/.test(bare) && !/^(warm|cool|rest|note|tip|perform|do |aim|focus|superset)/i.test(bare);
+      var looksLikeTitle = /^routine\s*[:–—-]/i.test(bare) || (words <= 6 && !/[.!?]$/.test(bare) && !/^(warm|cool|rest|note|tip|perform|do |aim|focus|superset)/i.test(bare));
       if (looksLikeTitle) {
-        var title = bare.replace(/^(day|workout|session)\s*\d+\s*[:–—-]\s*/i, '').replace(/\s*[:–—-]\s*$/, '').trim() || bare;
+        var title = bare.replace(/^routine\s*[:–—-]\s*/i, '').replace(/^(day|workout|session)\s*\d+\s*[:–—-]\s*/i, '').replace(/\s*[:–—-]\s*$/, '').trim() || bare;
         var dayHeading = /^(day|workout|session|week)\s*\d/i.test(bare);
         if (!cur || cur.exercises.length) start(title.slice(0, 60));
         else if (!cur.name || dayHeading) cur.name = title.slice(0, 60); // "Day 1: Upper" beats a document title above it
@@ -394,7 +404,14 @@
     return out.join('\n');
   }
 
-  var api = { parseCsv: parseCsv, parseFitbod: parseFitbod, parseWorkoutText: parseWorkoutText, looksLikeCsv: looksLikeCsv, pdfItemsToText: pdfItemsToText, csvToPlanText: csvToPlanText };
+  /** A routine as plain text a friend can read, and paste into PR Forge (parseWorkoutText reads it back exactly). */
+  function routineToText(t, nameOf) {
+    return ['Routine: ' + t.name].concat(t.exercises.map(function (e) {
+      return nameOf(e.exerciseId) + ': ' + e.sets + ' set' + (e.sets === 1 ? '' : 's');
+    })).concat(['', 'Shared from PR Forge. To add it: Routines → New → Paste or import a plan.']).join('\n');
+  }
+
+  var api = { routineToText: routineToText, parseCsv: parseCsv, parseFitbod: parseFitbod, parseWorkoutText: parseWorkoutText, looksLikeCsv: looksLikeCsv, pdfItemsToText: pdfItemsToText, csvToPlanText: csvToPlanText };
   root.PRF = root.PRF || {};
   root.PRF.importers = api;
   if (typeof module === 'object' && module.exports) module.exports = api;

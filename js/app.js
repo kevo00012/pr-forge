@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '1.6.7';
+  var VERSION = '1.6.8';
 
   var S = ST.load();
   var V = {
@@ -452,7 +452,8 @@
       var names = t.exercises.map(function (e) { return esc(exById(e.exerciseId).name); }).join(' · ');
       var sets = t.exercises.reduce(function (a, e) { return a + e.sets; }, 0);
       return '<section class="card tpl"><div class="tpl-head"><h3>' + esc(t.name) + '</h3>' +
-        '<button class="btn ghost sm" data-act="template-edit" data-id="' + esc(t.id) + '">Edit</button></div>' +
+        '<div class="tpl-btns"><button class="btn ghost sm" data-act="template-share" data-id="' + esc(t.id) + '">Share</button>' +
+        '<button class="btn ghost sm" data-act="template-edit" data-id="' + esc(t.id) + '">Edit</button></div></div>' +
         '<p class="muted small">' + t.exercises.length + ' exercises · ' + sets + ' sets</p>' +
         (names ? '<p class="ex-names">' + names + '</p>' : '') +
         '<button class="btn primary block" data-act="start-template" data-id="' + esc(t.id) + '">Start</button></section>';
@@ -1492,7 +1493,7 @@
         var known = e.exerciseId ? exById(e.exerciseId) : null;
         return '<li><span class="paste-name"><strong>' + esc(known ? known.name : e.name) + '</strong>' +
           (known ? '' : '<span class="muted small">New exercise, added to your list</span>') + '</span>' +
-          '<span class="paste-sets">' + e.sets + (e.reps ? ' × ' + esc(e.reps) : ' sets') + '</span></li>';
+          '<span class="paste-sets">' + e.sets + (e.reps ? ' × ' + esc(e.reps) : e.sets === 1 ? ' set' : ' sets') + '</span></li>';
       }).join('') + '</ul></section>';
     }).join('');
     var n = res.workouts.length;
@@ -1649,6 +1650,19 @@
     'summary-done': function () { V.summary = null; V.screen = null; V.tab = 'home'; render(); },
 
     'template-new': function () { V.tplDraft = { id: null, name: '', exercises: [] }; V.screen = 'template'; render(); },
+    'template-share': function (el) {
+      var t = S.templates.filter(function (x) { return x.id === el.dataset.id; })[0];
+      if (!t) return;
+      var text = IM.routineToText(t, function (id) { return exById(id).name; });
+      var copied = function () { toast('Copied. Paste it into a message to your friend.', '', 3500); };
+      var copy = function () {
+        try { navigator.clipboard.writeText(text).then(copied, function () { toast('Couldn’t copy. Try again.', 'warn'); }); }
+        catch (e) { toast('Couldn’t copy. Try again.', 'warn'); }
+      };
+      if (navigator.share) {
+        navigator.share({ title: t.name, text: text }).catch(function (e) { if (!e || e.name !== 'AbortError') copy(); });
+      } else copy();
+    },
     'template-edit': function (el) {
       var t = S.templates.filter(function (x) { return x.id === el.dataset.id; })[0];
       if (!t) return;

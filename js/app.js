@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '1.6.8';
+  var VERSION = '1.6.9';
 
   var S = ST.load();
   var V = {
@@ -621,25 +621,54 @@
   }
 
   // ----- Progress -----
+  /** A lift's last sessions as a thin line, newest on the right, with a dot on the latest coloured by its status. */
+  function sparkLine(values, status, label) {
+    var W = 112, H = 64, P = 6;
+    var min = Math.min.apply(null, values), max = Math.max.apply(null, values), span = max - min;
+    var x = function (i) { return values.length === 1 ? W - P : P + (i * (W - 2 * P)) / (values.length - 1); };
+    var y = function (v) { return span ? H - P - ((H - 2 * P) * (v - min)) / span : H / 2; };
+    var pts = values.map(function (v, i) { return x(i).toFixed(1) + ',' + y(v).toFixed(1); });
+    var last = values.length - 1;
+    return '<svg class="spark" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="' + esc(label) + '">' +
+      (values.length > 1 ? '<polyline points="' + pts.join(' ') + '"/>' : '') +
+      '<circle class="spark-' + status + '" cx="' + x(last).toFixed(1) + '" cy="' + y(values[last]).toFixed(1) + '" r="4"/></svg>';
+  }
+  /** The lifts shown big on Progress: the ones you pinned, or else your 5 most-trained of the last 8 weeks. */
+  function mainLiftIds(trends) {
+    var pinned = S.settings.pinned || [];
+    if (pinned.length) return pinned.slice();
+    return trends.slice().sort(function (a, b) { return b.sessions - a.sessions; }).slice(0, 5).map(function (t) { return t.exerciseId; });
+  }
+
   function viewProgress() {
     var trends = M.liftTrends(S.workouts, new Date());
-    var trendCard = function (t) {
-      var ex = exById(t.exerciseId);
+    var byId = {}; trends.forEach(function (t) { byId[t.exerciseId] = t; });
+    var mainIds = mainLiftIds(trends);
+    var pinnedMode = (S.settings.pinned || []).length > 0;
+    var trendCard = function (id) {
+      var ex = exById(id), t = byId[id];
+      if (!t) {
+        return '<button class="card trend" data-act="lift-open" data-id="' + esc(id) + '" data-from="progress"><span class="trend-main"><span class="trend-name"><span class="trend-lift">' + esc(ex.name) + '</span>' +
+          '<span class="pill paused">No recent sessions</span></span><span class="muted small">Not trained in the last 8 weeks. Tap for its full history.</span></span></button>';
+      }
       var values = t.spark.map(function (v) { return metricValue(t.metric, v); }).join(', ');
-      return '<button class="card trend" data-act="lift-open" data-id="' + esc(t.exerciseId) + '"><span class="trend-main"><span class="trend-name"><span class="trend-lift">' + esc(ex.name) + '</span>' +
+      return '<button class="card trend" data-act="lift-open" data-id="' + esc(id) + '" data-from="progress"><span class="trend-main"><span class="trend-name"><span class="trend-lift">' + esc(ex.name) + '</span>' +
         '<span class="pill ' + t.status + '">' + STATUS_LABEL[t.status] + '</span></span>' +
         '<span class="trend-num">' + metricValue(t.metric, t.best) + '<small> ' + metricUnit(t.metric) + '</small></span>' +
         '<span class="muted small">' + (sideLabel(ex) ? sideLabel(ex) + ' · ' : '') + t.text + '</span></span>' +
-        bars(t.spark, LAST_BAR[t.status], ex.name + ', ' + metricUnit(t.metric) + ' by session: ' + values) +
+        sparkLine(t.spark, t.status, ex.name + ', ' + metricUnit(t.metric) + ', last ' + t.spark.length + ' sessions: ' + values) +
         (t.status === 'stalled' ? '<span class="idea">Try: ' + STALL_IDEAS[t.metric][0].toLowerCase() + ' Tap for more ideas.</span>' : '') +
         '</button>';
     };
-    var group = function (title, statuses) {
-      var items = trends.filter(function (t) { return statuses.indexOf(t.status) !== -1; });
-      return items.length ? '<h2 class="month">' + title + '</h2>' + items.map(trendCard).join('') : '';
-    };
-    var trendHtml = trends.length
-      ? group('Needs attention', ['stalled', 'down']) + group('Moving', ['progressing', 'holding']) + group('Building or paused', ['building', 'paused'])
+    var attention = trends.filter(function (t) { return (t.status === 'stalled' || t.status === 'down') && mainIds.indexOf(t.exerciseId) === -1; });
+    var attentionHtml = attention.length ? '<h2 class="month">Needs attention</h2><section class="card att-list">' + attention.slice(0, 5).map(function (t) {
+      var ex = exById(t.exerciseId);
+      return '<button class="att-row" data-act="lift-open" data-id="' + esc(t.exerciseId) + '" data-from="progress"><span class="paste-name"><strong>' + esc(ex.name) + '</strong><span class="muted small">' + esc(t.text) + '</span></span>' +
+        '<span class="att-right"><span class="pill ' + t.status + '">' + STATUS_LABEL[t.status] + '</span><span class="att-num">' + metricValue(t.metric, t.best) + ' <small>' + metricUnit(t.metric) + '</small></span></span></button>';
+    }).join('') + (attention.length > 5 ? '<button class="att-more" data-act="exercises-open">+' + (attention.length - 5) + ' more in All lifts</button>' : '') + '</section>' : '';
+    var trendHtml = trends.length || mainIds.length
+      ? '<div class="month-row"><h2 class="month">Main lifts</h2><span class="muted small">' + (pinnedMode ? 'Pinned by you' : 'Your most-trained. Pin lifts to choose') + '</span></div>' +
+        mainIds.map(trendCard).join('') + attentionHtml
       : '<section class="card empty"><p class="muted small">Finish a few workouts and each lift’s trend shows up here.</p></section>';
 
     var counts = { progressing: 0, holding: 0, stalled: 0, building: 0, down: 0, paused: 0 };
@@ -657,14 +686,22 @@
     var seg = '<div class="seg seg-wide" role="tablist">' +
       '<button class="' + (view === 'trends' ? 'on' : '') + '" data-act="progress-view" data-v="trends" aria-pressed="' + (view === 'trends') + '">Trends</button>' +
       '<button class="' + (view === 'records' ? 'on' : '') + '" data-act="progress-view" data-v="records" aria-pressed="' + (view === 'records') + '">Records</button></div>';
-    var allEx = '<button class="btn ghost block" data-act="exercises-open">All exercises</button>';
+    var allEx = '<button class="btn ghost block" data-act="exercises-open">All lifts (' + exerciseIndex().filter(function (o) { return o.sessions; }).length + ')</button>';
     var how = '<details class="how"><summary>How trends are worked out</summary><p class="muted small">Each session’s best set is turned into an estimated one-rep max: weight × (1 + reps ÷ 30). Lifts without weight use your most reps or longest hold instead. ' +
       '<b>Progressing</b> = a new best within your last 3 sessions of that lift. <b>Holding</b> = 3–4 sessions since the best. <b>Stalled</b> = 5 or more. ' +
       '<b>Down</b> = your last 2 sessions were over 5% under your best of the 6 weeks before them. <b>Paused</b> = no session in 14 days or more. ' +
       'Warm-ups don’t count, and assisted lifts have no trend. Only lifts trained in the last 8 weeks are shown; every lift is under All exercises.</p></details>';
     var header = '<header class="top row"><h1>Progress</h1>' + settingsButton() + '</header>' + seg;
     if (view === 'records') {
-      return header + '<section class="card"><h2 class="card-title">Personal records</h2><ul class="prs">' + recordsHtml() + '</ul></section>' + allEx;
+      var allPrs = M.personalRecords(S.workouts);
+      var mainPrs = allPrs.filter(function (r) { return mainIds.indexOf(r.exerciseId) !== -1; })
+        .sort(function (a, b) { return mainIds.indexOf(a.exerciseId) - mainIds.indexOf(b.exerciseId); });
+      var otherPrs = allPrs.filter(function (r) { return mainIds.indexOf(r.exerciseId) === -1; });
+      var mainCard = '<section class="card"><h2 class="card-title">Main lifts</h2><ul class="prs">' + (mainPrs.length ? recordRows(mainPrs) : '<li class="muted small">No records for your main lifts yet.</li>') + '</ul></section>';
+      var otherCard = !otherPrs.length ? '' : V.recordsAll
+        ? '<section class="card"><h2 class="card-title">Other lifts</h2><ul class="prs">' + recordRows(otherPrs) + '</ul></section><button class="btn ghost block" data-act="records-all">Show fewer</button>'
+        : '<button class="btn ghost block" data-act="records-all">Show all records (' + otherPrs.length + ' more)</button>';
+      return header + (allPrs.length ? mainCard + otherCard : '<section class="card"><ul class="prs"><li class="muted small">No records yet.</li></ul></section>') + allEx;
     }
     return header + ledeHtml + (trends.length ? how : '') + weeklyChart() + trendHtml + allEx;
   }
@@ -672,6 +709,9 @@
   function recordsHtml(onlyId) {
     var prs = M.personalRecords(S.workouts).filter(function (r) { return !onlyId || r.exerciseId === onlyId; });
     if (!prs.length) return '<li class="muted small">' + (onlyId ? 'No record yet. Imported and edited sessions don’t count as records.' : 'No records yet.') + '</li>';
+    return recordRows(prs, onlyId);
+  }
+  function recordRows(prs, onlyId) {
     return prs.map(function (r) {
       var ex = exById(r.exerciseId);
       var main = r.bestE1rm ? 'Est. 1RM ' + w(r.bestE1rm.e1rmLb) + ' <span class="muted">(' + w(r.bestE1rm.weightLb) + ' × ' + r.bestE1rm.reps + ')</span>'
@@ -711,11 +751,16 @@
       return words.every(function (wd) { return hay.indexOf(wd) !== -1; });
     });
     if (!rows.length) return '<p class="muted small">' + (words.length ? 'No exercise matches “' + esc(q) + '”.' : 'Exercises you log, add to a routine or create show up here.') + '</p>';
+    var trendById = {};
+    M.liftTrends(S.workouts, new Date()).forEach(function (t) { trendById[t.exerciseId] = t; });
+    var pinned = S.settings.pinned || [];
     return rows.map(function (o) {
       var meta = o.sessions ? o.sessions + ' session' + (o.sessions === 1 ? '' : 's') + ' · last ' + relDay(o.last).toLowerCase()
         : o.routines ? 'In ' + o.routines + ' routine' + (o.routines === 1 ? '' : 's') + ', not logged yet' : 'Not used yet';
+      var tr = trendById[o.id];
       return '<button class="ex-index-row" data-act="lift-open" data-id="' + esc(o.id) + '" data-from="exercises"><span class="paste-name"><strong>' + esc(o.ex.name) + '</strong>' +
-        '<span class="muted small">' + esc(o.ex.muscle) + (o.ex.custom ? ' · Custom' : '') + ' · ' + meta + '</span></span>' + icon('arrow', 'sm') + '</button>';
+        '<span class="muted small">' + (pinned.indexOf(o.id) !== -1 ? 'Pinned · ' : '') + esc(o.ex.muscle) + (o.ex.custom ? ' · Custom' : '') + ' · ' + meta + '</span></span>' +
+        (tr ? '<span class="pill ' + tr.status + '">' + STATUS_LABEL[tr.status] + '</span>' : '') + icon('arrow', 'sm') + '</button>';
     }).join('');
   }
   function viewExercises() {
@@ -824,10 +869,15 @@
   }
 
   /** How it's logged, plus rename/delete for your own exercises. Shown on every exercise page. */
+  function pinButton(ex) {
+    var on = (S.settings.pinned || []).indexOf(ex.id) !== -1;
+    return '<button class="btn ' + (on ? 'ghost' : 'ghost') + ' block" data-act="lift-pin" data-id="' + esc(ex.id) + '" aria-pressed="' + on + '">' +
+      (on ? 'Unpin from Progress' : 'Pin to Progress (main lifts)') + '</button>';
+  }
   function liftManageHtml(ex) {
     var kind = exKind(ex.id);
     var label = (EX.TRACKING.filter(function (t) { return t.id === kind; })[0] || {}).label || kind;
-    return '<section class="card"><h2 class="card-title">Settings</h2>' +
+    return pinButton(ex) + '<section class="card"><h2 class="card-title">Settings</h2>' +
       '<div class="setting"><span>Logged as<br><span class="muted small">' + esc(label) + '. Applies the next time you add it.</span></span>' +
       '<button class="btn ghost sm" data-act="ex-default-type" data-id="' + esc(ex.id) + '">Change</button></div>' +
       (ex.custom ? '<div class="row-2"><button class="btn ghost" data-act="custom-rename" data-id="' + esc(ex.id) + '">Rename</button>' +
@@ -1782,6 +1832,17 @@
     'edit-ex-add': function () { V.picker = { target: 'edit', q: '', muscle: '', selected: {} }; render(); },
 
     'lift-open': function (el) { V.liftId = el.dataset.id; V.liftFrom = el.dataset.from || 'progress'; V.liftRange = 'recent'; V.screen = 'lift'; render(); },
+    'lift-pin': function (el) {
+      var id = el.dataset.id, list = (S.settings.pinned || []).slice(), at = list.indexOf(id);
+      if (at !== -1) { list.splice(at, 1); S.settings.pinned = list; commit(); toast('Unpinned'); return; }
+      if (!list.length) {
+        // First pin: start from what Progress already shows, so pinning one lift doesn't make the others vanish.
+        list = mainLiftIds(M.liftTrends(S.workouts, new Date())).filter(function (x) { return x !== id; }).slice(0, 4);
+      }
+      if (list.length >= 8) { toast('You can pin up to 8 lifts. Unpin one first.', 'warn'); return; }
+      list.push(id); S.settings.pinned = list; commit(); toast('Pinned to Progress');
+    },
+    'records-all': function () { V.recordsAll = !V.recordsAll; render(); },
     'progress-view': function (el) { V.progressView = el.dataset.v === 'records' ? 'records' : 'trends'; render(); },
     'exercises-open': function () { V.exFrom = V.screen; V.screen = 'exercises'; render(); },
     'exercises-back': function () { V.screen = V.exFrom === 'settings' ? 'settings' : null; V.exFrom = null; if (!V.screen) V.tab = 'progress'; render(); },

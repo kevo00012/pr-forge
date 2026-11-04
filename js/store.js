@@ -13,7 +13,7 @@
   function defaults() {
     return {
       schema: SCHEMA,
-      settings: { unit: 'lb', restSeconds: 90, barLb: 45, barKg: 20, exerciseTypes: {}, setupDone: false },
+      settings: { unit: 'lb', restSeconds: 90, barLb: 45, barKg: 20, exerciseTypes: {}, pinned: [], setupDone: false },
       customExercises: [],
       templates: [],
       workouts: [],
@@ -116,6 +116,8 @@
       return { id: String(b.id), source: String(b.source || 'Fitbod'), at: String(b.at || ''), workouts: Number(b.workouts) || 0 };
     });
     // Anyone who already has data has clearly got past the welcome screen.
+    // Lifts pinned to the top of Progress, in the order pinned (at most 8, no repeats).
+    d.settings.pinned = arr(st.pinned).map(String).filter(function (id, i, a) { return id && a.indexOf(id) === i; }).slice(0, 8);
     d.settings.setupDone = st.setupDone === true || d.workouts.length > 0 || d.templates.length > 0 || !!d.active;
     return d;
   }

@@ -104,6 +104,8 @@ Sets per muscle, warm-up button, duplicate routine (1.7.2, Kevin chose these, 17
 - **Warm-up** button on the open exercise card (weight × reps and added-weight lifts only) adds a warm-up set after any existing warm-ups, before the first working set. Tapping a set number still toggles warm-up.
 - **Duplicate routine** in the routine editor (saved routines only): opens an unsaved copy named "<name> copy" with the same exercises, sets and rep targets; the original isn't changed (unsaved edits in the editor go into the copy, not the original).
 
+Chart ranges (1.7.3, Kevin chose it, 17 Nov 2026): the exercise page chart has **6 wk / 3 mo / 1 yr / All** (`LIFT_RANGES`, `V.liftRange`, default 3 mo, kept while the app is open). Points are spaced by date, not evenly; a break of 8+ weeks is a faint dashed link (`.gap`), so time off doesn't read as a drop. Over 40 sessions, only the latest gets a dot. Under the chart: first and last date, session count and the best in that range with its date.
+
 Not built yet from the old Expo app: lifetime milestones, weekly recap card, exercise info/cues, equipment filter in the picker, custom plate sets, rest-done notification, Strong/Hevy import, CSV export, themes.
 
 ## How Kevin wants code work done

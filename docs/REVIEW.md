@@ -83,6 +83,6 @@ Difficulty: S = an hour or two, M = a day, L = several days.
 ## 6. Implementation plan
 
 - **Phase 1 (done, 1.7.0):** B1–B4, imported labels, strength total trial.
-- **Phase 2 (needs your go-ahead):** sync the active workout, stale-workout banner, backup reminder. Reliability first.
-- **Phase 3:** rep targets → progression suggestions → sets per muscle.
+- **Phase 2 (done, 1.7.1):** rep targets in routines, progression suggestions, stale-workout banner. Syncing the workout in progress was moved to later (losing one needs the phone's storage wiped mid-workout).
+- **Phase 3:** sets per muscle, backup reminder, warm-up button, duplicate routine, chart ranges.
 - **Phase 4:** the P3 list, as you want them.

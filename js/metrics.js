@@ -447,6 +447,27 @@
     return hint;
   }
 
+  var PROGRESSION_STEP = { lb: 5, kg: 2.5 };
+  /**
+   * Double progression. When every working set last time reached the top of the rep target
+   * at one weight, suggest the next step (+5 lb / +2.5 kg; for assisted lifts, that much less help)
+   * at the bottom of the range. Otherwise null, and last time's numbers stay the hint.
+   * Returns { weight, reps, from } in targetUnit.
+   */
+  function progressionFor(last, target, targetUnit, kind) {
+    if (!last || !target || !(num(target.max) > 0)) return null;
+    if (kind !== 'weight' && kind !== 'weighted' && kind !== 'assisted') return null;
+    var work = last.sets.filter(function (s) { return !s.warmup && num(s.reps) > 0; });
+    if (!work.length) return null;
+    var w0 = num(work[0].weight);
+    if (!work.every(function (s) { return Math.abs(num(s.weight) - w0) < 0.01 && num(s.reps) >= target.max; })) return null;
+    var from = units.roundForEntry(units.convert(w0, last.unit, targetUnit));
+    var step = PROGRESSION_STEP[targetUnit] || 5;
+    if (kind === 'weight' && !(from > 0)) return null;
+    if (kind === 'assisted' && !(from > 0)) return null;
+    return { weight: kind === 'assisted' ? Math.max(0, from - step) : from + step, reps: target.min, from: from };
+  }
+
   /**
    * Hint for a set, taking today's earlier sets into account.
    * `today` lists this exercise's earlier confirmed sets of the same kind in this workout
@@ -454,8 +475,10 @@
    * plan on an earlier set today, later sets follow your change instead of last session's number;
    * with no last session to go on, the previous set today is the hint.
    */
-  function hintForSet(last, index, targetUnit, warmup, today) {
-    var base = hintFor(last, index, targetUnit, warmup);
+  function hintForSet(last, index, targetUnit, warmup, today, plan) {
+    var usePlan = plan && !warmup && last;
+    var at = function (i) { return usePlan ? { weight: plan.weight, reps: plan.reps } : hintFor(last, i, targetUnit, warmup); };
+    var base = at(index);
     var prev = today && today.length ? today[today.length - 1] : null;
     if (!prev) return base;
     if (!base) {
@@ -463,7 +486,7 @@
       if (num(prev.seconds) > 0) h.seconds = num(prev.seconds);
       return h;
     }
-    var planned = hintFor(last, today.length - 1, targetUnit, warmup);
+    var planned = at(today.length - 1);
     if (planned && num(prev.weight) > 0 && Math.abs(num(prev.weight) - planned.weight) > 0.01) {
       base = { weight: num(prev.weight), reps: base.reps, seconds: base.seconds };
       if (base.seconds === undefined) delete base.seconds;
@@ -540,7 +563,7 @@
     workoutFrequency: workoutFrequency,
     lastSessionFor: lastSessionFor,
     hintFor: hintFor,
-    hintForSet: hintForSet,
+    hintForSet: hintForSet, progressionFor: progressionFor,
     strengthTotal: strengthTotal,
     E1RM_MAX_REPS: E1RM_MAX_REPS,
     suggestNext: suggestNext

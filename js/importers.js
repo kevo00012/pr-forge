@@ -405,13 +405,24 @@
   }
 
   /** A routine as plain text a friend can read, and paste into PR Forge (parseWorkoutText reads it back exactly). */
+  /** "8", "8-12", "8–12 reps", "8 to 12" → { min, max }; anything else (AMRAP, 30s, blank) → null. */
+  function parseRepTarget(text) {
+    var m = String(text == null ? '' : text).trim().match(/^(\d{1,3})(?:\s*(?:-|–|—|to)\s*(\d{1,3}))?(?:\s*reps?)?$/i);
+    if (!m) return null;
+    var a = Number(m[1]), b = m[2] ? Number(m[2]) : a;
+    if (a > b) { var t = a; a = b; b = t; }
+    return a >= 1 && b <= 100 ? { min: a, max: b } : null;
+  }
+  /** { min: 8, max: 12 } → "8–12"; { min: 5, max: 5 } → "5". */
+  function repTargetText(t) { return !t ? '' : t.min === t.max ? String(t.min) : t.min + '–' + t.max; }
+
   function routineToText(t, nameOf) {
     return ['Routine: ' + t.name].concat(t.exercises.map(function (e) {
-      return nameOf(e.exerciseId) + ': ' + e.sets + ' set' + (e.sets === 1 ? '' : 's');
+      return nameOf(e.exerciseId) + ': ' + e.sets + ' set' + (e.sets === 1 ? '' : 's') + (e.reps ? ' × ' + repTargetText(e.reps) + ' reps' : '');
     })).concat(['', 'Shared from PR Forge. To add it: Routines → New → Paste or import a plan.']).join('\n');
   }
 
-  var api = { routineToText: routineToText, parseCsv: parseCsv, parseFitbod: parseFitbod, parseWorkoutText: parseWorkoutText, looksLikeCsv: looksLikeCsv, pdfItemsToText: pdfItemsToText, csvToPlanText: csvToPlanText };
+  var api = { parseRepTarget: parseRepTarget, repTargetText: repTargetText, routineToText: routineToText, parseCsv: parseCsv, parseFitbod: parseFitbod, parseWorkoutText: parseWorkoutText, looksLikeCsv: looksLikeCsv, pdfItemsToText: pdfItemsToText, csvToPlanText: csvToPlanText };
   root.PRF = root.PRF || {};
   root.PRF.importers = api;
   if (typeof module === 'object' && module.exports) module.exports = api;

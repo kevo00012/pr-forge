@@ -50,6 +50,14 @@
     return out;
   }
 
+  /** Rep target { min, max } (whole reps 1–100), or null. */
+  function cleanTarget(t) {
+    if (!isObj(t)) return null;
+    var a = Math.round(Number(t.min)), b = Math.round(Number(t.max));
+    if (!isFinite(a) || !isFinite(b) || a < 1 || b > 100 || a > b) return null;
+    return { min: a, max: b };
+  }
+
   function cleanWorkout(w) {
     if (!isObj(w) || !w.startedAt || isNaN(new Date(w.startedAt))) return null;
     var out = {
@@ -62,6 +70,8 @@
       exercises: arr(w.exercises).filter(function (e) { return isObj(e) && e.exerciseId; }).map(function (e) {
         var entry = { id: String(e.id || uid()), exerciseId: String(e.exerciseId), sets: arr(e.sets).filter(isObj).map(cleanSet) };
         if (trackingOrNull(e.tracking)) entry.tracking = e.tracking;
+        var tg = cleanTarget(e.target);
+        if (tg) entry.target = tg;
         return entry;
       })
     };
@@ -69,6 +79,7 @@
     if (w.imported) out.imported = true;
     if (w.importBatch) out.importBatch = String(w.importBatch);
     if (w.sourceKey) out.sourceKey = String(w.sourceKey);
+    if (!out.endedAt && w.lastSetAt && !isNaN(new Date(w.lastSetAt))) out.lastSetAt = new Date(w.lastSetAt).toISOString(); // workout in progress only
     return out;
   }
 
@@ -105,7 +116,10 @@
         id: String(t.id), name: String(t.name || 'Workout').slice(0, 60),
         exercises: arr(t.exercises).filter(function (e) { return isObj(e) && e.exerciseId; }).map(function (e) {
           var n = Math.round(Number(e.sets));
-          return { exerciseId: String(e.exerciseId), sets: isFinite(n) && n >= 1 && n <= 20 ? n : 3 };
+          var out = { exerciseId: String(e.exerciseId), sets: isFinite(n) && n >= 1 && n <= 20 ? n : 3 };
+          var tg = cleanTarget(e.reps);
+          if (tg) out.reps = tg;
+          return out;
         })
       };
     });

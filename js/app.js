@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '1.6.9';
+  var VERSION = '1.7.0';
 
   var S = ST.load();
   var V = {
@@ -83,6 +83,12 @@
     var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
     var mm = (h ? String(m).padStart(2, '0') : String(m)) + ':' + String(sec).padStart(2, '0');
     return h ? h + ':' + mm : mm;
+  }
+  /** Duration for a finished workout. Imports often have no real duration (one timestamp per day). */
+  function workoutDuration(wk) {
+    var mins = (new Date(wk.endedAt) - new Date(wk.startedAt)) / 60000;
+    if (wk.imported && !(mins >= 10 && mins <= 300)) return null;
+    return durationText(wk.startedAt, wk.endedAt);
   }
   function durationText(a, b) {
     var mins = Math.max(1, Math.round((new Date(b) - new Date(a)) / 60000));
@@ -515,7 +521,7 @@
       var best = bestText(entry.exerciseId, a.unit, a.id);
       var showPlates = kind === 'weight' && ex.equipment === 'Barbell' && !!activeSet;
       var rows = entry.sets.map(function (s, i) {
-        var hint = M.hintFor(last, kindIndex(entry, s), a.unit, s.warmup);
+        var hint = setHint(entry, s, last, a.unit);
         var html = setRowHtml(entry, s, {
           scope: 'active', u: a.unit, hint: hint, kind: kind, side: side, n: i + 1, workIdx: kindIndex(entry, s) + 1,
           active: s === activeSet, isPr: s.done && V.prShown[s.id] === prKey(s)
@@ -621,6 +627,11 @@
   }
 
   // ----- Progress -----
+  /** ". All-time best 262 lb" when an older best is higher than the last 90 days' best. */
+  function allTimeNote(t) {
+    if (!t.allTimeBest || t.allTimeBest <= t.best + 0.05) return '';
+    return ' · All-time best ' + metricValue(t.metric, t.allTimeBest) + (t.metric === 'e1rm' ? ' ' + unit() : ' ' + metricUnit(t.metric));
+  }
   /** A lift's last sessions as a thin line, newest on the right, with a dot on the latest coloured by its status. */
   function sparkLine(values, status, label) {
     var W = 112, H = 64, P = 6;
@@ -632,6 +643,20 @@
     return '<svg class="spark" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="' + esc(label) + '">' +
       (values.length > 1 ? '<polyline points="' + pts.join(' ') + '"/>' : '') +
       '<circle class="spark-' + status + '" cx="' + x(last).toFixed(1) + '" cy="' + y(values[last]).toFixed(1) + '" r="4"/></svg>';
+  }
+  /** Strength total of the main lifts: a real weight you can check, not a score. Hidden until 2 lifts qualify. */
+  function strengthCard(ids) {
+    var st = M.strengthTotal(S.workouts, ids, new Date());
+    if (!st) return '';
+    var u = unit();
+    var change = st.changeLb === null ? '<span class="muted small">Change shows once each lift has sessions in both of the last two 8-week spans.</span>'
+      : '<span class="st-change' + (st.changeLb > 0.5 ? ' up' : '') + '">' + (st.changeLb > 0.5 ? '+' : st.changeLb < -0.5 ? '−' : '±') + U.fmtNum(Math.round(Math.abs(U.fromLb(st.changeLb, u)))) + ' ' + u + ' vs the 8 weeks before</span>';
+    var names = st.lifts.map(function (l) { return esc(exById(l.exerciseId).name.replace(/ \((Barbell)\)$/, '')); }).join(' + ');
+    return '<section class="card st-card" aria-label="Strength total"><div class="pr-chart-head"><h2 class="card-title">Strength total</h2><span class="muted small">last 8 weeks</span></div>' +
+      '<p class="st-total">' + U.fmtNum(Math.round(U.fromLb(st.totalLb, u))) + '<small> ' + u + '</small></p>' + change +
+      (st.pctOfBest !== null && st.pctOfBest < 100 ? '<span class="muted small">' + st.pctOfBest + '% of the same lifts’ all-time bests</span>' : st.pctOfBest === 100 ? '<span class="muted small">Every lift is at its all-time best</span>' : '') +
+      '<details class="how"><summary>How it’s worked out</summary><p class="muted small">The best estimated one-rep max of each main lift in the last 8 weeks, added up: ' + names + '. ' +
+      'Estimated 1RM = weight × (1 + reps ÷ 30), with reps above 12 counted as 12. A main lift with no session in 8 weeks is left out rather than counted as zero. Pin lifts on their pages to choose which count.</p></details></section>';
   }
   /** The lifts shown big on Progress: the ones you pinned, or else your 5 most-trained of the last 8 weeks. */
   function mainLiftIds(trends) {
@@ -655,7 +680,7 @@
       return '<button class="card trend" data-act="lift-open" data-id="' + esc(id) + '" data-from="progress"><span class="trend-main"><span class="trend-name"><span class="trend-lift">' + esc(ex.name) + '</span>' +
         '<span class="pill ' + t.status + '">' + STATUS_LABEL[t.status] + '</span></span>' +
         '<span class="trend-num">' + metricValue(t.metric, t.best) + '<small> ' + metricUnit(t.metric) + '</small></span>' +
-        '<span class="muted small">' + (sideLabel(ex) ? sideLabel(ex) + ' · ' : '') + t.text + '</span></span>' +
+        '<span class="muted small">' + (sideLabel(ex) ? sideLabel(ex) + ' · ' : '') + t.text + allTimeNote(t) + '</span></span>' +
         sparkLine(t.spark, t.status, ex.name + ', ' + metricUnit(t.metric) + ', last ' + t.spark.length + ' sessions: ' + values) +
         (t.status === 'stalled' ? '<span class="idea">Try: ' + STALL_IDEAS[t.metric][0].toLowerCase() + ' Tap for more ideas.</span>' : '') +
         '</button>';
@@ -703,7 +728,7 @@
         : '<button class="btn ghost block" data-act="records-all">Show all records (' + otherPrs.length + ' more)</button>';
       return header + (allPrs.length ? mainCard + otherCard : '<section class="card"><ul class="prs"><li class="muted small">No records yet.</li></ul></section>') + allEx;
     }
-    return header + ledeHtml + (trends.length ? how : '') + weeklyChart() + trendHtml + allEx;
+    return header + strengthCard(mainIds) + ledeHtml + (trends.length ? how : '') + weeklyChart() + trendHtml + allEx;
   }
   /** Personal records, one row per lift; each opens that lift's page. */
   function recordsHtml(onlyId) {
@@ -719,8 +744,9 @@
         : r.leastAssist ? 'Least help ' + w(r.leastAssist.weightLb) + ' <span class="muted">× ' + r.leastAssist.reps + '</span>'
         : r.maxBwReps ? r.maxBwReps.reps + ' reps' : '—';
       var heavy = r.heaviest ? 'Heaviest ' + w(r.heaviest.weightLb) + ' × ' + r.heaviest.reps + ' · ' : '';
+      var src = r.bestE1rm && r.bestE1rm.imported ? 'Best is from an import (' + shortDate(r.bestE1rm.date) + ' ' + new Date(r.bestE1rm.date).getFullYear() + ') · ' : '';
       var inner = '<strong>' + esc(ex.name) + (sideLabel(ex) ? ' <span class="plan-side">' + sideLabel(ex).toLowerCase() + '</span>' : '') + '</strong><span class="pr-main">' + main + '</span>' +
-        '<span class="muted small">' + heavy + r.sessions + ' session' + (r.sessions === 1 ? '' : 's') + '</span>';
+        '<span class="muted small">' + src + heavy + r.sessions + ' session' + (r.sessions === 1 ? '' : 's') + '</span>';
       return onlyId ? '<li class="pr">' + inner + '</li>'
         : '<li><button class="pr pr-btn" data-act="lift-open" data-id="' + esc(r.exerciseId) + '" data-from="progress">' + inner + '</button></li>';
     }).join('');
@@ -911,9 +937,9 @@
       : '';
     return back +
       '<header class="top"><h1>' + esc(ex.name) + '</h1>' + (sideLabel(ex) ? '<span class="muted">' + sideLabel(ex) + '</span>' : '') + '</header>' +
-      '<div class="lift-head"><span class="trend-num">' + metricValue(trend.metric, trend.best) + '<small> ' + metricUnit(trend.metric) + ' best</small></span>' +
+      '<div class="lift-head"><span class="trend-num">' + metricValue(trend.metric, trend.best) + '<small> ' + metricUnit(trend.metric) + ' best, 90 days</small></span>' +
       '<span class="pill ' + trend.status + '">' + STATUS_LABEL[trend.status] + '</span></div>' +
-      '<p class="lede">' + trend.text + '. ' + trend.sessions + ' session' + (trend.sessions === 1 ? '' : 's') + ' logged.</p>' +
+      '<p class="lede">' + trend.text + '. ' + trend.totalSessions + ' session' + (trend.totalSessions === 1 ? '' : 's') + ' logged' + allTimeNote(trend) + '.</p>' +
       '<section class="card"><div class="pr-chart-head"><h2 class="card-title">Each session’s best</h2><div class="seg">' + rangeBtn('recent', '6 wk') + rangeBtn('all', 'All') + '</div></div>' +
       (shown.length ? liftChart(shown, trend.metric, trend.status) : '<p class="muted small">No sessions in the last 6 weeks.</p>') + '</section>' +
       ideas +
@@ -1106,7 +1132,7 @@
       var names = wk.exercises.map(function (e) { return exById(e.exerciseId).name; });
       html += '<button class="card hist" data-act="history-open" data-id="' + esc(wk.id) + '">' +
         '<div class="hist-top"><span class="hist-name">' + esc(wk.name) + '</span><span class="muted small hist-date">' + relDay(wk.startedAt) + '</span></div>' +
-        '<span class="muted small">' + durationText(wk.startedAt, wk.endedAt) + ' · ' + M.workoutSetCount(wk) + ' sets · ' + vol(M.workoutVolumeLb(wk)) + '</span>' +
+        '<span class="muted small">' + (wk.imported ? 'Imported · ' : '') + (workoutDuration(wk) ? workoutDuration(wk) + ' · ' : '') + M.workoutSetCount(wk) + ' sets · ' + vol(M.workoutVolumeLb(wk)) + '</span>' +
         '<span class="ex-names">' + esc(names.slice(0, 4).join(' · ')) + (names.length > 4 ? ' +' + (names.length - 4) : '') + '</span>' +
         (prCount[wk.id] ? '<span class="pr-badge">' + icon('trophy', 'sm') + prCount[wk.id] + ' PR' + (prCount[wk.id] === 1 ? '' : 's') + '</span>' : '') +
         '</button>';
@@ -1140,7 +1166,7 @@
     }).join('');
     var wins = Object.keys(prByEx).map(function (id) { return prWin(wk, prByEx[id]); }).join('');
     var d = new Date(wk.startedAt);
-    var dur = durationText(wk.startedAt, wk.endedAt).replace(/ ?(h|min)/g, '<small> $1</small>');
+    var dur = workoutDuration(wk) ? workoutDuration(wk).replace(/ ?(h|min)/g, '<small> $1</small>') : '—';
     var stats = '<section class="stats" aria-label="Totals">' + stat('Duration', dur) + stat('Working sets', String(M.workoutSetCount(wk))) +
       stat(wk.unit + ' volume', volNum(M.workoutVolumeLb(wk), wk.unit)) + '</section>';
     var log = '<section class="log-list" aria-label="Sets">' + ex + '</section>';
@@ -1253,6 +1279,15 @@
     for (var i = 0; i < entry.sets.length; i++) if (entry.sets[i].id === sid) return entry.sets[i];
     return null;
   }
+  /** Hint for a set: last session's matching set, following any weight change made earlier today. */
+  function setHint(entry, set, last, u) {
+    var today = [];
+    for (var i = 0; i < entry.sets.length && entry.sets[i] !== set; i++) {
+      var p = entry.sets[i];
+      if (p.done && !!p.warmup === !!set.warmup) today.push({ weight: p.weight, reps: p.reps, seconds: p.seconds });
+    }
+    return M.hintForSet(last, kindIndex(entry, set), u, set.warmup, today);
+  }
   /** Position of a set among sets of the same kind (working or warm-up) in its exercise. */
   function kindIndex(entry, set) {
     var n = 0;
@@ -1329,7 +1364,7 @@
     var entry = findEntry(eid); if (!entry) return;
     var set = findSet(entry, sid); if (!set) return;
     if (set.done) { set.done = false; commit(); return; }
-    var hint = M.hintFor(M.lastSessionFor(S.workouts, entry.exerciseId, S.active.id), kindIndex(entry, set), S.active.unit, set.warmup);
+    var hint = setHint(entry, set, M.lastSessionFor(S.workouts, entry.exerciseId, S.active.id), S.active.unit);
     var kind = entryKind(entry);
     set.tracking = kind;
     if (kind === 'timed') {
@@ -1359,10 +1394,21 @@
     }
   }
 
+  /** A confirmed set still has reps (or seconds); they can be cleared after confirming. */
+  function setComplete(entry, s) {
+    var kind = s.tracking || entryKind(entry);
+    if (kind === 'timed') return Number(s.seconds) > 0;
+    return Number(s.reps) > 0;
+  }
   function finishWorkout() {
     var a = S.active;
+    var blanked = 0;
     var kept = a.exercises.map(function (e) {
-      return { id: e.id, exerciseId: e.exerciseId, tracking: e.tracking, sets: e.sets.filter(function (s) { return s.done; }) };
+      return { id: e.id, exerciseId: e.exerciseId, tracking: e.tracking, sets: e.sets.filter(function (s) {
+        if (s.done && !setComplete(e, s)) { blanked++; return false; }
+        if (s.done && (s.weight == null || s.weight === '' || !isFinite(Number(s.weight)))) s.weight = 0; // same as confirming with no weight
+        return s.done;
+      }) };
     }).filter(function (e) { return e.sets.length > 0; });
     var unconfirmed = 0;
     a.exercises.forEach(function (e) { e.sets.forEach(function (s) { if (!s.done) unconfirmed++; }); });
@@ -1374,7 +1420,8 @@
     }
     var count = kept.reduce(function (n, e) { return n + e.sets.length; }, 0);
     confirmBox('Finish workout?', count + ' confirmed set' + (count === 1 ? '' : 's') + ' will be saved.' +
-      (unconfirmed ? ' ' + unconfirmed + ' unconfirmed set' + (unconfirmed === 1 ? '' : 's') + ' will be dropped.' : ''), 'Finish').then(function (ok) {
+      (unconfirmed ? ' ' + unconfirmed + ' unconfirmed set' + (unconfirmed === 1 ? '' : 's') + ' will be dropped.' : '') +
+      (blanked ? ' ' + blanked + ' confirmed set' + (blanked === 1 ? ' has' : 's have') + ' blank reps and will be dropped too; tap Cancel to fill ' + (blanked === 1 ? 'it' : 'them') + ' in.' : ''), 'Finish').then(function (ok) {
       if (!ok) return;
       var done = JSON.parse(JSON.stringify(a));
       done.exercises = kept;

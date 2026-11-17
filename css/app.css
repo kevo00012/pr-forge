@@ -467,6 +467,11 @@ input::placeholder { color: var(--ghost); opacity: 1; }
 .spark circle { fill: var(--soft); stroke: var(--surface); stroke-width: 2; }
 .spark circle.spark-progressing { fill: var(--accent); }
 .spark circle.spark-stalled, .spark circle.spark-down { fill: var(--warn); }
+.st-card { gap: 6px; }
+.st-total { font-family: var(--cond); font-weight: 800; font-size: 56px; line-height: .95; font-variant-numeric: tabular-nums; margin: 0; }
+.st-total small { font-size: 20px; font-weight: 600; color: var(--muted); }
+.st-change { font-family: var(--cond); font-weight: 700; font-size: 18px; color: var(--soft); font-variant-numeric: tabular-nums; }
+.st-change.up { color: var(--accent); }
 .month-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .att-list { gap: 0; padding-top: 4px; padding-bottom: 4px; }
 .att-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 56px; padding: 10px 0; text-align: left; border-top: 1px solid var(--line); }

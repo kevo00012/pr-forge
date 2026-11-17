@@ -459,3 +459,69 @@ test('shared routine text reads back as the same routine, equipment and custom n
   assert.deepEqual(back.workouts[0].exercises.map((e) => [e.exerciseId, e.sets]), [['bench-press', 4], ['db-curl', 3], ['cable-curl', 2], [null, 1]]);
   assert.equal(back.workouts[0].exercises[3].name, 'Zercher Wiggle (pause)');
 });
+
+// ----- Review fixes (Nov 2026) -----
+const DAY = 864e5;
+const benchAt = (now, ago, wt, reps, extra) => Object.assign({ id: 'w' + ago + '-' + wt, name: 'x', unit: 'lb', startedAt: new Date(now - ago * DAY).toISOString(), endedAt: new Date(now - ago * DAY + 36e5).toISOString(),
+  exercises: [{ id: 'e', exerciseId: 'bench-press', sets: [{ id: 's', weight: wt, reps, done: true }] }] }, extra || {});
+
+test('e1rm: reps above 12 count as 12, so light high-rep sets cannot pose as strength gains', () => {
+  assert.equal(m.E1RM_MAX_REPS, 12);
+  assert.ok(Math.abs(m.e1rm(135, 20) - 135 * 1.4) < 1e-9);
+  assert.ok(m.e1rm(205, 3) > m.e1rm(135, 20)); // was 225.5 vs 225.0 uncapped
+  assert.equal(m.e1rm(100, 12), m.e1rm(100, 30));
+  assert.ok(Math.abs(m.e1rm(200, 5) - 233.33) < 0.01); // unchanged for normal sets
+});
+
+test('trends: a lifter climbing back after a break reads Progressing, not Stalled; the old best stays as all-time best', () => {
+  const now = new Date(2026, 10, 17).getTime();
+  const ws = [benchAt(now, 730, 225, 5, { imported: true }), benchAt(now, 720, 225, 5, { imported: true }), benchAt(now, 700, 220, 5, { imported: true }),
+    benchAt(now, 42, 185, 5), benchAt(now, 35, 190, 5), benchAt(now, 28, 195, 5), benchAt(now, 21, 200, 5), benchAt(now, 14, 205, 5), benchAt(now, 7, 210, 5)];
+  const t = m.liftTrends(ws, new Date(now))[0];
+  assert.equal(t.status, 'progressing');
+  assert.equal(t.sessions, 6);          // judged on the last 90 days
+  assert.equal(t.totalSessions, 9);
+  assert.ok(Math.abs(t.best - m.e1rm(210, 5)) < 1e-9);
+  assert.ok(Math.abs(t.allTimeBest - m.e1rm(225, 5)) < 1e-9);
+  assert.equal(t.points.length, 9);     // the chart still has the whole history
+  // A genuine stall inside the window is still a stall
+  const flat = [benchAt(now, 63, 215, 5), benchAt(now, 56, 210, 5), benchAt(now, 49, 210, 5), benchAt(now, 42, 210, 5), benchAt(now, 35, 210, 5), benchAt(now, 28, 210, 5), benchAt(now, 21, 210, 5), benchAt(now, 7, 210, 5)];
+  assert.equal(m.liftTrends(flat, new Date(now))[0].status, 'stalled');
+});
+
+test('hints: a weight change on an earlier set today carries to the next sets; no history falls back to the previous set', () => {
+  const now = Date.now();
+  const last = m.lastSessionFor([{ id: 'p', name: 'x', unit: 'lb', startedAt: new Date(now - 7 * DAY).toISOString(), endedAt: new Date(now - 7 * DAY + 36e5).toISOString(),
+    exercises: [{ id: 'e', exerciseId: 'bench-press', sets: [203, 203, 203, 203].map((w, i) => ({ id: 's' + i, weight: w, reps: 8, done: true })) }] }], 'bench-press');
+  assert.deepEqual(m.hintForSet(last, 0, 'lb', false, []), { weight: 203, reps: 8 });
+  assert.deepEqual(m.hintForSet(last, 2, 'lb', false, [{ weight: 205, reps: 8 }, { weight: 205, reps: 8 }]), { weight: 205, reps: 8 });
+  assert.deepEqual(m.hintForSet(last, 1, 'lb', false, [{ weight: 203, reps: 6 }]), { weight: 203, reps: 8 }); // same weight: plan stands
+  assert.deepEqual(m.hintForSet(null, 1, 'lb', false, [{ weight: 60, reps: 12 }]), { weight: 60, reps: 12 });
+  assert.equal(m.hintForSet(null, 0, 'lb', false, []), null);
+  // pyramids keep their per-set plan when today's weights match it
+  const pyr = m.lastSessionFor([{ id: 'p', name: 'x', unit: 'lb', startedAt: new Date(now - 7 * DAY).toISOString(), endedAt: new Date(now - 7 * DAY + 36e5).toISOString(),
+    exercises: [{ id: 'e', exerciseId: 'bench-press', sets: [185, 205, 225].map((w, i) => ({ id: 's' + i, weight: w, reps: 5, done: true })) }] }], 'bench-press');
+  assert.deepEqual(m.hintForSet(pyr, 1, 'lb', false, [{ weight: 185, reps: 5 }]), { weight: 205, reps: 5 });
+});
+
+test('strength total: sums current bests of chosen lifts, compares with the 8 weeks before, and the all-time best', () => {
+  const now = new Date(2026, 10, 17).getTime();
+  const lift = (id, ago, wt) => ({ id: id + ago, name: 'x', unit: 'lb', startedAt: new Date(now - ago * DAY).toISOString(), endedAt: new Date(now - ago * DAY + 36e5).toISOString(),
+    exercises: [{ id: 'e', exerciseId: id, sets: [{ id: 's', weight: wt, reps: 1, done: true }] }] });
+  const ws = [lift('bench-press', 300, 250), lift('bench-press', 80, 220), lift('bench-press', 10, 230), lift('back-squat', 70, 300), lift('back-squat', 5, 320), lift('deadlift', 400, 405)];
+  const st = m.strengthTotal(ws, ['bench-press', 'back-squat', 'deadlift'], new Date(now));
+  assert.equal(st.totalLb, 550);                  // deadlift has no session in 8 weeks: left out
+  assert.equal(st.lifts.length, 2);
+  assert.equal(st.changeLb, 30);                  // 230+320 vs 220+300
+  assert.equal(st.pctOfBest, Math.round(550 / 570 * 100));
+  assert.equal(m.strengthTotal(ws, ['bench-press'], new Date(now)), null);
+  const noPrior = m.strengthTotal([lift('bench-press', 3, 200), lift('back-squat', 3, 300)], ['bench-press', 'back-squat'], new Date(now));
+  assert.equal(noPrior.changeLb, null);
+});
+
+test('records: a best that came from an imported workout says so', () => {
+  const now = Date.now();
+  const r = m.personalRecords([benchAt(now, 30, 250, 3, { imported: true }), benchAt(now, 3, 225, 5)])[0];
+  assert.equal(r.bestE1rm.imported, true);
+  assert.equal(r.heaviest.imported, true);
+});

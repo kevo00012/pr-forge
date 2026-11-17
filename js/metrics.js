@@ -29,9 +29,15 @@
   }
   function isTimed(set) { return set.tracking === 'timed' || (num(set.seconds) > 0 && !(num(set.reps) > 0)); }
 
-  /** Estimated one-rep max (Epley). 1 rep = the weight itself. */
+  /**
+   * Estimated one-rep max (Epley). 1 rep = the weight itself.
+   * Reps above E1RM_MAX_REPS count as that many: the formula overrates long sets
+   * (uncapped, 135 x 20 would equal 205 x 3), so light high-rep work can't pose as a strength gain.
+   * Volume and rep records still use the real reps.
+   */
+  var E1RM_MAX_REPS = 12;
   function e1rm(weightLb, reps) {
-    var w = num(weightLb), r = num(reps);
+    var w = num(weightLb), r = Math.min(num(reps), E1RM_MAX_REPS);
     if (w <= 0 || r <= 0) return 0;
     if (r === 1) return w;
     return w * (1 + r / 30);
@@ -212,10 +218,10 @@
         r.sessions++;
         r.lastDate = w.startedAt;
         if (s.topE1rm > 0 && (!r.bestE1rm || s.topE1rm > r.bestE1rm.e1rmLb + EPS_LB)) {
-          r.bestE1rm = { e1rmLb: s.topE1rm, weightLb: s.bestE1rmSet.weightLb, reps: s.bestE1rmSet.reps, date: w.startedAt };
+          r.bestE1rm = { e1rmLb: s.topE1rm, weightLb: s.bestE1rmSet.weightLb, reps: s.bestE1rmSet.reps, date: w.startedAt, imported: !!w.imported };
         }
         if (s.topWeightLb > 0 && (!r.heaviest || s.topWeightLb > r.heaviest.weightLb + EPS_LB)) {
-          r.heaviest = { weightLb: s.topWeightLb, reps: s.topWeightReps, date: w.startedAt };
+          r.heaviest = { weightLb: s.topWeightLb, reps: s.topWeightReps, date: w.startedAt, imported: !!w.imported };
         }
         if (s.maxBwReps > 0 && (!r.maxBwReps || s.maxBwReps > r.maxBwReps.reps)) {
           r.maxBwReps = { reps: s.maxBwReps, date: w.startedAt };
@@ -322,7 +328,8 @@
   };
 
   /**
-   * Per-lift trend, explained in plain words. Based on each session's best estimated 1RM, or
+   * Per-lift trend, explained in plain words. Judged on the last 90 days of sessions (`best` is the best
+   * in that window; `allTimeBest` the best ever). Based on each session's best estimated 1RM, or
    * best reps / longest hold for lifts without weight. Assisted lifts have no trend, because
    * less help and more reps can't be compared. Lifts trained in the last `windowDays` (default 56) only.
    * status: 'building' (<3 sessions) | 'paused' (no session in 14+ days)
@@ -330,9 +337,11 @@
    *         | 'progressing' (new best within the last 3 sessions)
    *         | 'holding' (3–4 sessions since best) | 'stalled' (5+ sessions since best)
    */
+  var RECENT_DAYS = 90; // a trend compares sessions within this window; older bests stay in Records
   function liftTrends(workouts, now, windowDays) {
     var at = now || new Date();
     var cutoff = new Date(at.getTime() - (windowDays || 56) * DAY_MS);
+    var recentStart = new Date(at.getTime() - RECENT_DAYS * DAY_MS);
     var ids = {};
     finished(workouts).forEach(function (w) {
       (w.exercises || []).forEach(function (ex) { ids[ex.exerciseId] = true; });
@@ -346,9 +355,15 @@
       if (!metric) return;
       var value = METRICS[metric];
       var eps = metric === 'e1rm' ? EPS_LB : 0;
-      var sessions = all.filter(function (s) { return value(s) > 0; });
-      var last = sessions[sessions.length - 1];
+      var history = all.filter(function (s) { return value(s) > 0; });
+      var last = history[history.length - 1];
       if (new Date(last.date) < cutoff) return;
+      var allTimeBest = 0;
+      history.forEach(function (s) { allTimeBest = Math.max(allTimeBest, value(s)); });
+      // Judge the trend on the last 90 days only. Measured against an all-time best from before a break,
+      // a lifter climbing back every week would read as "Stalled" for months.
+      var sessions = history.filter(function (s) { return new Date(s.date) >= recentStart; });
+      if (!sessions.length) sessions = [last];
 
       var best = 0, bestIdx = 0;
       sessions.forEach(function (s, i) {
@@ -386,10 +401,11 @@
         text = 'No new best in ' + since + ' sessions';
       }
       out.push({
-        exerciseId: id, status: status, text: text, sessions: n, metric: metric, best: best,
+        exerciseId: id, status: status, text: text, sessions: n, totalSessions: history.length, metric: metric,
+        best: best, allTimeBest: allTimeBest,
         bestE1rmLb: metric === 'e1rm' ? best : 0, lastE1rmLb: last.topE1rm, lastDate: last.date,
         spark: sessions.slice(-8).map(value),
-        points: sessions.map(function (s) {
+        points: history.map(function (s) {
           return { date: s.date, workoutId: s.workoutId, value: value(s), set: s.bestE1rmSet };
         })
       });
@@ -431,6 +447,64 @@
     return hint;
   }
 
+  /**
+   * Hint for a set, taking today's earlier sets into account.
+   * `today` lists this exercise's earlier confirmed sets of the same kind in this workout
+   * ({ weight, reps, seconds }, in targetUnit). If you changed the weight from last session's
+   * plan on an earlier set today, later sets follow your change instead of last session's number;
+   * with no last session to go on, the previous set today is the hint.
+   */
+  function hintForSet(last, index, targetUnit, warmup, today) {
+    var base = hintFor(last, index, targetUnit, warmup);
+    var prev = today && today.length ? today[today.length - 1] : null;
+    if (!prev) return base;
+    if (!base) {
+      var h = { weight: num(prev.weight), reps: num(prev.reps) };
+      if (num(prev.seconds) > 0) h.seconds = num(prev.seconds);
+      return h;
+    }
+    var planned = hintFor(last, today.length - 1, targetUnit, warmup);
+    if (planned && num(prev.weight) > 0 && Math.abs(num(prev.weight) - planned.weight) > 0.01) {
+      base = { weight: num(prev.weight), reps: base.reps, seconds: base.seconds };
+      if (base.seconds === undefined) delete base.seconds;
+    }
+    return base;
+  }
+
+  /**
+   * Strength total: the sum of each lift's best estimated 1RM over the last `days` (default 56),
+   * with the same sum for the `days` before that and each lift's all-time best, for the lifts in `ids`.
+   * Lifts without a weighted session in the current window are left out of every sum, so a missing
+   * lift can't make the total look like it dropped. Returns null when fewer than 2 lifts qualify.
+   */
+  function strengthTotal(workouts, ids, now, days) {
+    var at = (now || new Date()).getTime();
+    var span = (days || 56) * DAY_MS;
+    var lifts = [];
+    (ids || []).forEach(function (id) {
+      var cur = 0, prior = 0, best = 0;
+      sessionsFor(workouts, id).forEach(function (s) {
+        if (!(s.topE1rm > 0)) return;
+        var t = new Date(s.date).getTime();
+        best = Math.max(best, s.topE1rm);
+        if (t > at - span && t <= at) cur = Math.max(cur, s.topE1rm);
+        else if (t > at - 2 * span && t <= at - span) prior = Math.max(prior, s.topE1rm);
+      });
+      if (cur > 0) lifts.push({ exerciseId: id, currentLb: cur, priorLb: prior, allTimeLb: best });
+    });
+    if (lifts.length < 2) return null;
+    var total = 0, allTime = 0, withPrior = 0, nowOfThose = 0, priorTotal = 0;
+    lifts.forEach(function (l) {
+      total += l.currentLb; allTime += l.allTimeLb;
+      if (l.priorLb > 0) { withPrior++; nowOfThose += l.currentLb; priorTotal += l.priorLb; }
+    });
+    return {
+      totalLb: total, lifts: lifts,
+      changeLb: withPrior === lifts.length ? nowOfThose - priorTotal : null, // only when every lift can be compared
+      pctOfBest: allTime > 0 ? Math.round((total / allTime) * 100) : null
+    };
+  }
+
   /** Suggest the template done least recently (never-done ones first, in list order). */
   function suggestNext(templates, workouts) {
     if (!templates || !templates.length) return null;
@@ -466,6 +540,9 @@
     workoutFrequency: workoutFrequency,
     lastSessionFor: lastSessionFor,
     hintFor: hintFor,
+    hintForSet: hintForSet,
+    strengthTotal: strengthTotal,
+    E1RM_MAX_REPS: E1RM_MAX_REPS,
     suggestNext: suggestNext
   };
 

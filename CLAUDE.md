@@ -10,7 +10,7 @@ Philosophy: **Make logging effortless. Make progress obvious. Keep the lifter in
   - `index.html`, `css/app.css`
   - `js/units.js` (lb/kg), `js/metrics.js` (volume, e1RM, PRs, trends, hints), `js/store.js` (localStorage + backup; unknown fields are dropped on load, so new saved fields must be added there; settings, customs and templates also go through `sync.profileOf`), `js/sync.js` (cloud sync rules, pure), `js/cloud.js` (Google sign-in via Supabase, network, sync timing), `js/vendor/supabase.js` (supabase-js 2.118.0 UMD, MIT), `js/plates.js` (plate calculator), `js/importers.js` (Fitbod CSV), `js/exercises.js` (built-in list and logging types), `js/app.js` (all UI)
   - `sw.js` (offline cache; bump `CACHE` on every release, which is also what makes phones show "Update ready"), `manifest.webmanifest`. Since 1.6.2 the app checks for a new `sw.js` when it comes to the front and every 30 min; when a new one takes over, an "Update ready · Reload" bar shows at the top of the screen (never on the logging or edit-workout screens; the app never reloads by itself). The home-screen icon is copied by iOS when the app is added, so only an icon change needs a re-add.
-  - `tests/logic.test.js`, `tests/sync.test.js`: run `node --test` in this folder (Node 20+). 41 tests, all passing as of 4 Nov 2026.
+  - `tests/logic.test.js`, `tests/sync.test.js`: run `node --test` in this folder (Node 20+). 46 tests, all passing as of 17 Nov 2026.
   - `supabase/schema.sql`: database tables, row level security and grants; run in Supabase → SQL Editor. Project URL `https://pvtcqdtqycihlontmirl.supabase.co`; the publishable key is in `js/cloud.js` (public by design). Never commit the secret key, database password or Google client secret.
 - Requirements doc (PRD): https://claude.ai/artifact/BRwXUQBAEp5rhWqbmuTFsv
 - Brand guide ("PR Forge Brand", 3 Nov 2026): https://claude.ai/artifact/Afwbg2BV4CiH7j4hCP2wCk. Logo versions and when to use each, colour tokens with contrast notes, type scale, layout, voice and tone. Clear-space and minimum-size rules in it were proposed by Claude, not yet confirmed by Kevin. Update it when colours, type or logo files change.
@@ -84,7 +84,15 @@ Settings (1.5.4): a gear (sliders icon) in the top-right of every tab opens a Se
 
 Sharing routines (1.6.8, Kevin asked 4 Nov): each routine card has **Share**, which opens the phone's share sheet (or copies, where there's none) with plain text from `importers.routineToText`: "Routine: <name>", one "<exact exercise name>: N sets" line each, and a "Shared from PR Forge…" footer. The friend pastes it into Routines → New → Paste or import a plan; `parseWorkoutText` reads it back exactly (exact names with their "(Dumbbell)" part are matched first; "Routine:" lines are always the name; the footer is ignored; unknown names become custom exercises). Text, not links, because on iPhone a link opens in Safari, not the home-screen app. Possible upgrade: a short share code stored in Supabase.
 
-Not built yet from the old Expo app: lifetime milestones, weekly recap card, pinned lifts, duplicate saved workout, target reps, exercise info/cues, equipment filter in the picker, custom plate sets, rest-done notification, Strong/Hevy import, CSV export, themes.
+Review fixes and Strength total (1.7.0, 17 Nov 2026; Kevin asked for a product/engineering review, full findings and roadmap in `docs/REVIEW.md`):
+- **e1RM** counts at most 12 reps (`E1RM_MAX_REPS`), so a light high-rep set can't beat a heavy triple.
+- **Trends** use the last 90 days for status and the big number (`best`); `allTimeBest` and `totalSessions` cover all history. Cards and the exercise page add "All-time best X" when an older (often imported) best is higher, so a comeback after an old Fitbod peak reads Progressing, not Stalled.
+- **Set hints** follow today: `M.hintForSet` / `setHint` carry the weight of the last confirmed same-kind set when it differs from last session's plan (sets 1–2 at 205 → sets 3–4 hint 205, not 203). Pyramids from last time still show when today matches the plan.
+- **Finish** drops confirmed sets whose reps (or seconds) were cleared after confirming and says so in the confirm box; a blank weight is saved as 0, the same as confirming without one.
+- **Imported** workouts: History shows "Imported" and hides durations outside 10 min–5 h (Fitbod gives one timestamp a day); Records says "Best is from an import (date)". Imported data itself is never changed.
+- **Strength total** card at the top of Progress → Trends (`M.strengthTotal`, `strengthCard`): sum of the main lifts' best e1RM in the last 8 weeks (lifts without a session in 8 weeks are left out, needs 2+), change vs the 8 weeks before (only when every lift has data in both), and % of the same lifts' all-time bests. Kevin said "build it and see if we like it", so it's on trial.
+
+Not built yet from the old Expo app: lifetime milestones, weekly recap card, duplicate saved workout, target reps, exercise info/cues, equipment filter in the picker, custom plate sets, rest-done notification, Strong/Hevy import, CSV export, themes.
 
 ## How Kevin wants code work done
 

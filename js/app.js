@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '1.7.0';
+  var VERSION = '1.7.1';
 
   var S = ST.load();
   var V = {
@@ -406,7 +406,7 @@
       upNext = '<section class="card hero"><div class="hero-top"><span class="eyebrow on">In progress</span>' +
         '<span class="muted small">Started ' + new Date(S.active.startedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + '</span></div>' +
         '<h2 class="big">' + esc(S.active.name) + '</h2>' +
-        '<button class="btn primary block" data-act="resume-workout">Resume workout</button></section>';
+        '<button class="btn primary block" data-act="resume-workout">Resume workout</button></section>' + staleBanner();
     } else {
       var next = M.suggestNext(S.templates, S.workouts);
       if (next) {
@@ -476,8 +476,10 @@
     var rows = d.exercises.map(function (e, i) {
       var ex = exById(e.exerciseId);
       return '<li class="tpl-row"><div class="tpl-name"><strong>' + esc(ex.name) + '</strong><span class="muted small">' + esc(ex.muscle) + (sideLabel(ex) ? ' · ' + sideLabel(ex) : '') + '</span></div>' +
-        '<div class="stepper"><button data-act="tpl-sets" data-i="' + i + '" data-d="-1" aria-label="Fewer sets">−</button><span>' + e.sets + ' sets</span>' +
+        '<div class="tpl-plan"><div class="stepper"><button data-act="tpl-sets" data-i="' + i + '" data-d="-1" aria-label="Fewer sets">−</button><span>' + e.sets + ' sets</span>' +
         '<button data-act="tpl-sets" data-i="' + i + '" data-d="1" aria-label="More sets">+</button></div>' +
+        '<label class="tpl-reps"><span>×</span><input data-field="tpl-reps" data-i="' + i + '" inputmode="text" autocomplete="off" maxlength="9" placeholder="reps" aria-label="Target reps for ' + esc(ex.name) + ', like 8 or 8-12" value="' +
+          esc(e.repsText != null ? e.repsText : IM.repTargetText(e.reps)) + '"><span class="muted small">reps</span></label></div>' +
         '<div class="tpl-tools"><button class="icon-btn" data-act="tpl-move" data-i="' + i + '" data-d="-1" aria-label="Move up"' + (i === 0 ? ' disabled' : '') + '>' + icon('up') + '</button>' +
         '<button class="icon-btn" data-act="tpl-move" data-i="' + i + '" data-d="1" aria-label="Move down"' + (i === d.exercises.length - 1 ? ' disabled' : '') + '>' + icon('down') + '</button>' +
         '<button class="icon-btn" data-act="tpl-remove" data-i="' + i + '" aria-label="Remove">' + icon('close') + '</button></div></li>';
@@ -533,7 +535,7 @@
         return html;
       }).join('');
       return '<section class="card ex-card" aria-label="' + esc(ex.name) + '"><div class="ex-head"><div class="ex-head-text"><h2>' + esc(ex.name) + '</h2>' +
-        '<p class="ex-meta">' + esc(ex.equipment) + (side ? ' · ' + side : '') + (lastText ? ' · ' + lastText : '') + '</p></div>' +
+        '<p class="ex-meta">' + esc(ex.equipment) + (side ? ' · ' + side : '') + (lastText ? ' · ' + lastText : '') + '</p>' + goalHtml(entry, last, a.unit, kind) + '</div>' +
         '<div class="ex-tools">' + (best ? '<span class="ex-best" title="Your best so far">' + best + '</span>' : '') +
         '<button class="icon-btn" data-act="ex-remove" data-e="' + entry.id + '" aria-label="Remove exercise">' + icon('close', 'sm') + '</button></div></div>' +
         setHeadHtml(kind, a.unit, side) +
@@ -555,10 +557,25 @@
       '<button class="btn finish" data-act="finish-workout">Finish</button></header>' +
       (total ? '<div class="wk-progress"><div class="wk-progress-text"><span>' + confirmed + ' of ' + total + ' sets</span><span>' + esc(names) + '</span></div>' +
         '<div class="wk-track"><div class="wk-fill" style="width:' + (100 * confirmed / total).toFixed(1) + '%"></div></div></div>' : '') +
+      staleBanner() +
       (S.workouts.length ? '' : '<p class="muted small tip">Faded numbers are last session’s. Tap ✓ to confirm a set — empty boxes take the faded values. Tap a set number to mark a warm-up.</p>') +
       cards +
       '<button class="btn ghost block" data-act="add-exercise">' + icon('plus', 'sm') + 'Add exercise</button>' +
       '<button class="btn danger-ghost block" data-act="discard-workout">Discard workout</button>';
+  }
+
+  /** "Target 8–12 reps", plus the next step when every working set hit the top of the range last time. */
+  function goalHtml(entry, last, u, kind) {
+    if (!entry.target) return '';
+    var t = 'Target ' + IM.repTargetText(entry.target) + ' reps';
+    var p = M.progressionFor(last, entry.target, u, kind);
+    if (p) {
+      var verb = kind === 'assisted' ? 'take ' + U.fmtNum(Math.abs(p.from - p.weight)) + ' ' + u + ' less help' : 'try <b>' + WEIGHT_SIGN[kind] + U.fmtNum(p.weight) + ' ' + u + '</b>';
+      t += ' · You hit ' + entry.target.max + ' on every set last time, so ' + verb + ' for ' + entry.target.min + '+';
+    } else if (last && kind !== 'timed') {
+      t += ' · Go up once every set reaches ' + entry.target.max;
+    }
+    return '<p class="ex-goal">' + t + '</p>';
   }
 
   // ----- PR moment -----
@@ -1281,12 +1298,13 @@
   }
   /** Hint for a set: last session's matching set, following any weight change made earlier today. */
   function setHint(entry, set, last, u) {
+    var plan = entry.target ? M.progressionFor(last, entry.target, u, entryKind(entry)) : null;
     var today = [];
     for (var i = 0; i < entry.sets.length && entry.sets[i] !== set; i++) {
       var p = entry.sets[i];
       if (p.done && !!p.warmup === !!set.warmup) today.push({ weight: p.weight, reps: p.reps, seconds: p.seconds });
     }
-    return M.hintForSet(last, kindIndex(entry, set), u, set.warmup, today);
+    return M.hintForSet(last, kindIndex(entry, set), u, set.warmup, today, plan);
   }
   /** Position of a set among sets of the same kind (working or warm-up) in its exercise. */
   function kindIndex(entry, set) {
@@ -1351,7 +1369,11 @@
     S.active = {
       id: uid(), name: name, templateId: templateId || null,
       startedAt: new Date().toISOString(), endedAt: null, unit: unit(),
-      exercises: (exercises || []).map(function (e) { return newEntry(e.exerciseId, e.sets); })
+      exercises: (exercises || []).map(function (e) {
+        var en = newEntry(e.exerciseId, e.sets);
+        if (e.reps) en.target = { min: e.reps.min, max: e.reps.max };
+        return en;
+      })
     };
     V.screen = 'workout';
     V.rest = null;
@@ -1378,6 +1400,7 @@
       if (kind === 'bodyweight' || set.weight == null) set.weight = 0;
     }
     set.done = true;
+    S.active.lastSetAt = new Date().toISOString();
     vibrate(12);
     if (V.focusEntry === entry.id && entry.sets.every(function (s) { return s.done; })) V.focusEntry = null;
     if (S.settings.restSeconds > 0 && !set.warmup) V.rest = { endsAt: Date.now() + S.settings.restSeconds * 1000, total: S.settings.restSeconds * 1000 };
@@ -1399,6 +1422,22 @@
     var kind = s.tracking || entryKind(entry);
     if (kind === 'timed') return Number(s.seconds) > 0;
     return Number(s.reps) > 0;
+  }
+  var STALE_HOURS = 4;
+  /** Hours since the last confirmed set (or the start) when that's over STALE_HOURS, else 0. */
+  function staleSince(a) {
+    if (!a) return 0;
+    var h = (Date.now() - new Date(a.lastSetAt || a.startedAt).getTime()) / 3600000;
+    return h > STALE_HOURS ? h : 0;
+  }
+  function staleBanner() {
+    var a = S.active, h = staleSince(a);
+    var ok; try { ok = localStorage.getItem('pr-forge:web:v1:stale-ok'); } catch (e) { ok = null; }
+    if (!h || ok === a.id + '|' + (a.lastSetAt || '')) return '';
+    var ago = h >= 48 ? Math.floor(h / 24) + ' days' : Math.floor(h) + ' h';
+    return '<section class="card stale" role="status"><p><b>Still going?</b> ' + (a.lastSetAt ? 'Your last set was ' + ago + ' ago.' : 'You started this ' + ago + ' ago and haven’t logged a set.') +
+      (a.lastSetAt ? ' Finishing now saves it with the end time of your last set.' : '') + '</p>' +
+      '<div class="row-btns"><button class="btn primary sm" data-act="finish-workout">Finish</button><button class="btn ghost sm" data-act="stale-keep">Keep going</button></div></section>';
   }
   function finishWorkout() {
     var a = S.active;
@@ -1425,7 +1464,8 @@
       if (!ok) return;
       var done = JSON.parse(JSON.stringify(a));
       done.exercises = kept;
-      done.endedAt = new Date().toISOString();
+      done.endedAt = staleSince(a) ? new Date(new Date(a.lastSetAt || a.startedAt).getTime() + 5 * 60000).toISOString() : new Date().toISOString();
+      delete done.lastSetAt;
       S.workouts.push(done);
       S.active = null;
       V.rest = null;
@@ -1680,6 +1720,10 @@
   var actions = {
     'tab': function (el) { V.tab = el.dataset.tab; V.screen = null; V.tplDraft = null; V.liftId = null; render(); },
     'resume-workout': function () { V.screen = 'workout'; render(); },
+    'stale-keep': function () {
+      try { localStorage.setItem('pr-forge:web:v1:stale-ok', S.active.id + '|' + (S.active.lastSetAt || '')); } catch (e) { /* banner shows again next time */ }
+      render();
+    },
     'minimize-workout': function () { V.screen = null; render(); },
     'start-empty': function () { startWorkout('Workout', null, []); },
     'start-template': function (el) {
@@ -1771,6 +1815,11 @@
       d.name = (d.name || '').trim();
       if (!d.name) { toast('Give the routine a name', 'warn'); return; }
       if (!d.exercises.length) { toast('Add at least one exercise', 'warn'); return; }
+      var bad = d.exercises.filter(function (e) { return e.repsText != null && e.repsText.trim() && !IM.parseRepTarget(e.repsText); })[0];
+      if (bad) { toast('Target reps for ' + esc(exById(bad.exerciseId).name) + ': use a number like 8 or a range like 8-12', 'warn', 4000); return; }
+      d.exercises.forEach(function (e) {
+        if (e.repsText != null) { var tg = IM.parseRepTarget(e.repsText); if (tg) e.reps = tg; else delete e.reps; delete e.repsText; }
+      });
       if (d.id) S.templates = S.templates.map(function (t) { return t.id === d.id ? d : t; });
       else { d.id = uid(); S.templates.push(d); }
       V.tplDraft = null; V.screen = null; V.tab = 'workouts';
@@ -2031,7 +2080,9 @@
             }
             id = made[key].id;
           }
-          t.exercises.push({ exerciseId: id, sets: e.sets });
+          var tx = { exerciseId: id, sets: e.sets }, tg = IM.parseRepTarget(e.reps);
+          if (tg) tx.reps = tg;
+          t.exercises.push(tx);
         });
         S.templates.push(t); saved.push(t);
       });
@@ -2104,6 +2155,9 @@
       }
     } else if (f === 'tpl-name' && V.tplDraft) {
       V.tplDraft.name = el.value;
+    } else if (f === 'tpl-reps' && V.tplDraft) {
+      var te = V.tplDraft.exercises[+el.dataset.i];
+      if (te) te.repsText = el.value;
     } else if (f === 'picker-q' && V.picker) {
       V.picker.q = el.value; refreshPicker();
     }

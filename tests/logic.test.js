@@ -525,3 +525,56 @@ test('records: a best that came from an imported workout says so', () => {
   assert.equal(r.bestE1rm.imported, true);
   assert.equal(r.heaviest.imported, true);
 });
+
+// ---------- Rep targets and progression (1.7.1) ----------
+test('rep targets: parse, text, share round trip', () => {
+  assert.deepEqual(importers.parseRepTarget('8-12'), { min: 8, max: 12 });
+  assert.deepEqual(importers.parseRepTarget(' 8 – 12 reps'), { min: 8, max: 12 });
+  assert.deepEqual(importers.parseRepTarget('12-8'), { min: 8, max: 12 });
+  assert.deepEqual(importers.parseRepTarget('5'), { min: 5, max: 5 });
+  for (const bad of ['', 'AMRAP', '30s', '0', '8-200', 'eight']) assert.equal(importers.parseRepTarget(bad), null, bad);
+  assert.equal(importers.repTargetText({ min: 8, max: 12 }), '8–12');
+  assert.equal(importers.repTargetText({ min: 5, max: 5 }), '5');
+  const t = { name: 'Push', exercises: [{ exerciseId: 'bench-press', sets: 4, reps: { min: 8, max: 12 } }, { exerciseId: 'dip', sets: 3 }] };
+  const name = { 'bench-press': 'Bench Press (Barbell)', dip: 'Dip' };
+  const back = importers.parseWorkoutText(importers.routineToText(t, (id) => name[id]), { exercises: ex.BUILT_IN }).workouts[0];
+  assert.equal(back.name, 'Push');
+  assert.deepEqual(back.exercises.map((e) => [e.exerciseId, e.sets, importers.parseRepTarget(e.reps)]),
+    [['bench-press', 4, { min: 8, max: 12 }], ['dip', 3, null]]);
+});
+
+test('rep targets: kept on routines and the workout in progress, invalid ones dropped', () => {
+  const st = store.normalise({
+    templates: [{ id: 't', name: 'A', exercises: [{ exerciseId: 'bench-press', sets: 4, reps: { min: 8, max: 12 } }, { exerciseId: 'dip', sets: 3, reps: { min: 12, max: 8 } }] }],
+    workouts: [{ id: 'w', startedAt: '2026-11-01T10:00:00Z', endedAt: '2026-11-01T11:00:00Z', lastSetAt: '2026-11-01T10:50:00Z', exercises: [] }],
+    active: { id: 'a', startedAt: '2026-11-02T10:00:00Z', lastSetAt: '2026-11-02T10:20:00Z', exercises: [{ id: 'e', exerciseId: 'bench-press', target: { min: 8, max: 12 }, sets: [] }] }
+  });
+  assert.deepEqual(st.templates[0].exercises[0].reps, { min: 8, max: 12 });
+  assert.equal('reps' in st.templates[0].exercises[1], false);
+  assert.deepEqual(st.active.exercises[0].target, { min: 8, max: 12 });
+  assert.equal(st.active.lastSetAt, '2026-11-02T10:20:00.000Z');
+  assert.equal('lastSetAt' in st.workouts[0], false);
+});
+
+test('progression: up a step only when every working set hit the top of the range', () => {
+  const sess = (sets, unit = 'lb') => ({ unit, sets: sets.map(([w, r, warm]) => ({ weight: w, reps: r, warmup: !!warm })) });
+  const tg = { min: 8, max: 12 };
+  assert.deepEqual(m.progressionFor(sess([[45, 10, true], [135, 12], [135, 12], [135, 13]]), tg, 'lb', 'weight'), { weight: 140, reps: 8, from: 135 });
+  assert.equal(m.progressionFor(sess([[135, 12], [135, 11]]), tg, 'lb', 'weight'), null);          // one set short
+  assert.equal(m.progressionFor(sess([[135, 12], [140, 12]]), tg, 'lb', 'weight'), null);          // mixed weights
+  assert.deepEqual(m.progressionFor(sess([[60, 12], [60, 12]], 'kg'), tg, 'kg', 'weight'), { weight: 62.5, reps: 8, from: 60 });
+  assert.deepEqual(m.progressionFor(sess([[40, 12]]), tg, 'lb', 'assisted'), { weight: 35, reps: 8, from: 40 });
+  assert.deepEqual(m.progressionFor(sess([[0, 12]]), tg, 'lb', 'weighted'), { weight: 5, reps: 8, from: 0 });
+  assert.equal(m.progressionFor(sess([[0, 12]]), tg, 'lb', 'bodyweight'), null);
+  assert.equal(m.progressionFor(null, tg, 'lb', 'weight'), null);
+  assert.equal(m.progressionFor(sess([[135, 12]]), null, 'lb', 'weight'), null);
+});
+
+test('progression: the suggestion becomes the hint, and today’s own weight still wins', () => {
+  const last = { unit: 'lb', sets: [{ weight: 135, reps: 12 }, { weight: 135, reps: 12 }, { weight: 135, reps: 12 }] };
+  const plan = { weight: 140, reps: 8 };
+  assert.deepEqual(m.hintForSet(last, 0, 'lb', false, [], plan), { weight: 140, reps: 8 });
+  assert.deepEqual(m.hintForSet(last, 1, 'lb', false, [{ weight: 140, reps: 9 }], plan), { weight: 140, reps: 8 });
+  assert.deepEqual(m.hintForSet(last, 1, 'lb', false, [{ weight: 145, reps: 8 }], plan), { weight: 145, reps: 8 });
+  assert.deepEqual(m.hintForSet(last, 0, 'lb', true, [], plan), m.hintFor(last, 0, 'lb', true)); // warm-ups ignore the plan
+});

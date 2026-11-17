@@ -13,8 +13,9 @@
   function defaults() {
     return {
       schema: SCHEMA,
-      settings: { unit: 'lb', restSeconds: 90, barLb: 45, barKg: 20, exerciseTypes: {}, pinned: [], setupDone: false },
+      settings: { unit: 'lb', restSeconds: 90, barLb: 45, barKg: 20, exerciseTypes: {}, pinned: [], rpe: false, theme: 'dark', setupDone: false },
       customExercises: [],
+      bodyWeights: [],
       templates: [],
       workouts: [],
       imports: [],
@@ -47,7 +48,20 @@
       warmup: !!s.warmup
     };
     if (trackingOrNull(s.tracking)) out.tracking = s.tracking;
+    var rpe = Number(s.rpe);
+    if (s.rpe != null && s.rpe !== '' && rpe >= 1 && rpe <= 10) out.rpe = Math.round(rpe * 2) / 2;
     return out;
+  }
+
+  /** Body weight log: [{ id, date (ISO), weight, unit }], oldest first, believable values only. */
+  function cleanBodyWeights(list) {
+    return arr(list).filter(function (b) {
+      if (!isObj(b) || !b.date || isNaN(new Date(b.date))) return false;
+      var w = Number(b.weight), kg = b.unit === 'kg';
+      return isFinite(w) && w >= (kg ? 20 : 45) && w <= (kg ? 400 : 900);
+    }).map(function (b) {
+      return { id: String(b.id || uid()), date: new Date(b.date).toISOString(), weight: Math.round(Number(b.weight) * 10) / 10, unit: b.unit === 'kg' ? 'kg' : 'lb' };
+    }).sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
   }
 
   /** Rep target { min, max } (whole reps 1–100), or null. */
@@ -72,6 +86,7 @@
         if (trackingOrNull(e.tracking)) entry.tracking = e.tracking;
         var tg = cleanTarget(e.target);
         if (tg) entry.target = tg;
+        if (e.superNext) entry.superNext = true;
         return entry;
       })
     };
@@ -119,6 +134,7 @@
           var out = { exerciseId: String(e.exerciseId), sets: isFinite(n) && n >= 1 && n <= 20 ? n : 3 };
           var tg = cleanTarget(e.reps);
           if (tg) out.reps = tg;
+          if (e.superNext) out.superNext = true;
           return out;
         })
       };
@@ -132,6 +148,9 @@
     // Anyone who already has data has clearly got past the welcome screen.
     // Lifts pinned to the top of Progress, in the order pinned (at most 8, no repeats).
     d.settings.pinned = arr(st.pinned).map(String).filter(function (id, i, a) { return id && a.indexOf(id) === i; }).slice(0, 8);
+    d.settings.rpe = st.rpe === true;
+    d.settings.theme = st.theme === 'light' || st.theme === 'system' ? st.theme : 'dark';
+    d.bodyWeights = cleanBodyWeights(raw.bodyWeights);
     d.settings.setupDone = st.setupDone === true || d.workouts.length > 0 || d.templates.length > 0 || !!d.active;
     return d;
   }

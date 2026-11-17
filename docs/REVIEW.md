@@ -85,4 +85,4 @@ Difficulty: S = an hour or two, M = a day, L = several days.
 - **Phase 1 (done, 1.7.0):** B1–B4, imported labels, strength total trial.
 - **Phase 2 (done, 1.7.1):** rep targets in routines, progression suggestions, stale-workout banner. Syncing the workout in progress was moved to later (losing one needs the phone's storage wiped mid-workout).
 - **Phase 3:** sets per muscle, warm-up button and duplicate routine done in 1.7.2. Chart ranges done in 1.7.3. Left: backup reminder.
-- **Phase 4:** the P3 list, as you want them.
+- **Phase 4 (done, 1.8.0):** CSV export, body weight, RPE, supersets, light theme.

@@ -1,5 +1,5 @@
 /* PR Forge — offline cache. Bump CACHE when you change any file so phones pick up the update. */
-var CACHE = 'pr-forge-web-1.8.0';
+var CACHE = 'pr-forge-web-1.8.1';
 var SHELL = [
   './',
   'index.html',

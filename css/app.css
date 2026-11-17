@@ -562,3 +562,7 @@ input::placeholder { color: var(--ghost); opacity: 1; }
 /* The logo's silver lettering is made for a dark ground, so the splash stays dark in every theme. */
 :root[data-theme="light"] #splash { background: #0d0c0b; }
 :root[data-theme="light"] #splash .tagline { color: #a8a098; }
+/* Orange on white is 2.6:1, below the 3:1 a focus ring or state outline needs, so outlines use the darker orange in light. */
+:root[data-theme="light"] .num:focus, :root[data-theme="light"] .field input:focus, :root[data-theme="light"] .field textarea:focus,
+:root[data-theme="light"] .search:focus, :root[data-theme="light"] .bar-input:focus, :root[data-theme="light"] .tpl-reps input:focus,
+:root[data-theme="light"] .set-row.active, :root[data-theme="light"] .set-row.active .check { border-color: var(--accent-ink); }

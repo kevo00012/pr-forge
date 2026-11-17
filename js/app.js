@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '1.7.1';
+  var VERSION = '1.7.2';
 
   var S = ST.load();
   var V = {
@@ -491,7 +491,8 @@
       (rows ? '<ul class="tpl-list">' + rows + '</ul>' : '<p class="muted small">No exercises yet.</p>') +
       '<button class="btn ghost block" data-act="tpl-add-ex">' + icon('plus', 'sm') + 'Add exercises</button></section>' +
       '<button class="btn primary block" data-act="template-save">Save routine</button>' +
-      (d.id ? '<button class="btn danger-ghost block" data-act="template-delete">Delete routine</button>' : '');
+      (d.id ? '<button class="btn ghost block" data-act="template-dup">Duplicate routine</button>' +
+        '<button class="btn danger-ghost block" data-act="template-delete">Delete routine</button>' : '');
   }
 
   // ----- Active workout -----
@@ -541,6 +542,7 @@
         setHeadHtml(kind, a.unit, side) +
         rows +
         '<div class="ex-actions"><button class="btn ghost sm" data-act="set-add" data-e="' + entry.id + '">' + icon('plus', 'sm') + 'Add set</button>' +
+        (kind === 'weight' || kind === 'weighted' ? '<button class="btn ghost sm" data-act="warmup-add" data-e="' + entry.id + '">' + icon('plus', 'sm') + 'Warm-up</button>' : '') +
         (entry.sets.length > 1 ? '<button class="btn ghost sm" data-act="set-remove" data-e="' + entry.id + '">Remove last set</button>' : '') +
         '<button class="btn ghost sm" data-act="ex-swap" data-e="' + entry.id + '">Swap</button>' +
         '<button class="btn ghost sm" data-act="ex-type" data-e="' + entry.id + '" aria-label="Logging type: ' + trackingLabel(kind) + '. Tap to change">' + trackingLabel(kind) + '</button>' +
@@ -745,7 +747,7 @@
         : '<button class="btn ghost block" data-act="records-all">Show all records (' + otherPrs.length + ' more)</button>';
       return header + (allPrs.length ? mainCard + otherCard : '<section class="card"><ul class="prs"><li class="muted small">No records yet.</li></ul></section>') + allEx;
     }
-    return header + strengthCard(mainIds) + ledeHtml + (trends.length ? how : '') + weeklyChart() + trendHtml + allEx;
+    return header + strengthCard(mainIds) + ledeHtml + (trends.length ? how : '') + weeklyChart() + trendHtml + muscleCard() + allEx;
   }
   /** Personal records, one row per lift; each opens that lift's page. */
   function recordsHtml(onlyId) {
@@ -887,6 +889,22 @@
       '<div class="pr-chart-foot"><span>' + shortDate(series[0].weekStart) + '</span><strong>This week</strong></div>' +
       '<p class="muted small" data-vol-read>' + esc(weekReadout(series[series.length - 1])) + '</p>' +
       '<p class="muted small">' + f.thisWeek + ' workout' + (f.thisWeek === 1 ? '' : 's') + ' this week · ' + U.fmtNum(f.priorAverage) + ' per week over the previous 4.</p></section>';
+  }
+
+  /** Working sets per muscle group, this week so far vs last week. Plain counts; no "ideal" ranges. */
+  function muscleCard() {
+    var rows = M.setsByMuscle(S.workouts, function (id) { return exById(id).muscle; }, new Date());
+    if (!rows.length) return '';
+    var max = Math.max.apply(null, rows.map(function (r) { return Math.max(r.thisWeek, r.lastWeek); })) || 1;
+    var list = rows.map(function (r) {
+      return '<li class="mus-row"><span class="mus-name">' + esc(r.muscle) + '</span>' +
+        '<span class="mus-track" aria-hidden="true"><span class="mus-last" style="width:' + (100 * r.lastWeek / max).toFixed(1) + '%"></span>' +
+        '<span class="mus-now" style="width:' + (100 * r.thisWeek / max).toFixed(1) + '%"></span></span>' +
+        '<span class="mus-num" aria-label="' + r.thisWeek + ' sets this week, ' + r.lastWeek + ' last week">' + r.thisWeek + '<small> / ' + r.lastWeek + '</small></span></li>';
+    }).join('');
+    return '<section class="card" aria-label="Sets per muscle"><div class="pr-chart-head"><h2 class="card-title">Sets per muscle</h2><span class="muted small">this week / last week</span></div>' +
+      '<ul class="mus-list">' + list + '</ul>' +
+      '<p class="muted small">Working sets from Monday, by each exercise’s main muscle. Warm-ups don’t count. The faint bar is last week.</p></section>';
   }
 
   /** One lift over time. Tap-free on purpose: the session list below it holds the same numbers. */
@@ -1751,6 +1769,16 @@
       var entry = findEntry(el.dataset.e); var set = entry && findSet(entry, el.dataset.s);
       if (set) { set.warmup = !set.warmup; commit(); }
     },
+    'warmup-add': function (el) {
+      var entry = findEntry(el.dataset.e); if (!entry) return;
+      var set = newSet(entryKind(entry));
+      set.warmup = true;
+      var at = 0;
+      while (at < entry.sets.length && entry.sets[at].warmup) at++; // after any warm-ups, before the first working set
+      entry.sets.splice(at, 0, set);
+      V.focusEntry = entry.id;
+      commit();
+    },
     'set-add': function (el) {
       var entry = findEntry(el.dataset.e); if (!entry) return;
       entry.sets.push(newSet(entryKind(entry))); commit();
@@ -1840,6 +1868,15 @@
       else { d.id = uid(); S.templates.push(d); }
       V.tplDraft = null; V.screen = null; V.tab = 'workouts';
       commit(); toast('Saved');
+    },
+    'template-dup': function () {
+      var d = V.tplDraft; if (!d) return;
+      var copy = JSON.parse(JSON.stringify(d));
+      copy.id = null;
+      copy.name = ((d.name || '').trim() + ' copy').trim().slice(0, 60);
+      V.tplDraft = copy;
+      render();
+      toast('Copy ready. Rename it and tap Save; the original isn’t changed', '', 3500);
     },
     'template-delete': function () {
       var d = V.tplDraft;

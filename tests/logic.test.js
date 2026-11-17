@@ -578,3 +578,23 @@ test('progression: the suggestion becomes the hint, and today’s own weight sti
   assert.deepEqual(m.hintForSet(last, 1, 'lb', false, [{ weight: 145, reps: 8 }], plan), { weight: 145, reps: 8 });
   assert.deepEqual(m.hintForSet(last, 0, 'lb', true, [], plan), m.hintFor(last, 0, 'lb', true)); // warm-ups ignore the plan
 });
+
+test('sets per muscle: this week vs last week, warm-ups and unconfirmed sets ignored', () => {
+  const now = new Date(2026, 10, 18, 12); // Wednesday
+  const wk = (date, sets) => ({ startedAt: date.toISOString(), endedAt: date.toISOString(), unit: 'lb',
+    exercises: sets.map(([id, n, warm = 0, open = 0]) => ({ exerciseId: id, sets: [
+      ...Array(n).fill(0).map(() => ({ weight: 100, reps: 5, done: true })),
+      ...Array(warm).fill(0).map(() => ({ weight: 45, reps: 5, done: true, warmup: true })),
+      ...Array(open).fill(0).map(() => ({ weight: null, reps: null, done: false }))] })) });
+  const muscle = { 'bench-press': 'Chest', 'barbell-row': 'Back', curl: 'Biceps' };
+  const rows = m.setsByMuscle([
+    wk(new Date(2026, 10, 16, 18), [['bench-press', 4, 2, 1], ['barbell-row', 3]]),  // Monday this week
+    wk(new Date(2026, 10, 12, 18), [['bench-press', 3], ['curl', 2]]),               // last week
+    wk(new Date(2026, 10, 1, 18), [['curl', 9]])                                      // older: ignored
+  ], (id) => muscle[id], now);
+  assert.deepEqual(rows, [
+    { muscle: 'Chest', thisWeek: 4, lastWeek: 3 },
+    { muscle: 'Back', thisWeek: 3, lastWeek: 0 },
+    { muscle: 'Biceps', thisWeek: 0, lastWeek: 2 }]);
+  assert.deepEqual(m.setsByMuscle([], () => 'Chest', now), []);
+});

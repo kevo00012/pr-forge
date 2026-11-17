@@ -209,6 +209,15 @@ h3, h2.h-lift { font-size: 20px; font-weight: 700; line-height: 1.05; overflow-w
 .stepper { grid-area: step; display: inline-flex; align-items: center; gap: 4px; justify-self: start; background: var(--raised); border-radius: 12px; }
 .stepper button { width: 44px; height: 44px; font-size: 20px; color: var(--text); }
 .stepper span { min-width: 58px; text-align: center; font-family: var(--cond); font-weight: 700; font-size: 17px; font-variant-numeric: tabular-nums; }
+.mus-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.mus-row { display: grid; grid-template-columns: 84px minmax(0, 1fr) 56px; align-items: center; gap: 10px; }
+.mus-name { font-size: 14px; color: var(--soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mus-track { position: relative; height: 12px; border-radius: 6px; background: var(--raised); overflow: hidden; }
+.mus-last, .mus-now { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 6px; }
+.mus-last { background: var(--line); }
+.mus-now { background: var(--soft); top: 3px; bottom: 3px; }
+.mus-num { font-family: var(--cond); font-weight: 700; font-size: 18px; text-align: right; font-variant-numeric: tabular-nums; }
+.mus-num small { font-size: 14px; color: var(--muted); font-weight: 600; }
 .field-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .field-pair .field { min-width: 0; }
 .tpl-plan { grid-area: step; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

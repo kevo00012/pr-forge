@@ -1095,19 +1095,35 @@
     }).join('');
     return '<header class="top row"><button class="btn ghost sm" data-act="edit-cancel">' + icon('back', 'sm') + 'Cancel</button><h1 class="h-sm">Edit workout</h1><span></span></header>' +
       '<section class="card"><label class="field"><span>Name</span><input data-field="edit-name" maxlength="60" value="' + esc(d.name) + '"></label>' +
-      '<label class="field"><span>Date</span><input type="date" data-field="edit-date" value="' + localDate(d.startedAt) + '" max="' + localDate(new Date().toISOString()) + '"></label></section>' +
+      '<label class="field"><span>Date</span><input type="date" data-field="edit-date" value="' + localDate(d.startedAt) + '" max="' + localDate(new Date().toISOString()) + '"></label>' +
+      '<div class="field-pair"><label class="field"><span>Started</span><input type="time" data-field="edit-time" value="' + localTime(d.startedAt) + '"></label>' +
+      '<label class="field"><span>Duration (min)</span><input data-field="edit-mins" inputmode="numeric" maxlength="3" autocomplete="off" placeholder="—" value="' + editMinutes(d) + '"></label></div>' +
+      '<p class="muted small">Left a workout running? Set how long it really took. Changing the time doesn’t affect PRs.</p></section>' +
       cards +
       '<button class="btn ghost block" data-act="edit-ex-add">' + icon('plus', 'sm') + 'Add exercise</button>' +
       '<p class="muted small tip">Saving changes means this workout no longer counts as a PR. Later sessions still have to beat its numbers. Sets with nothing entered are dropped.</p>' +
       '<button class="btn primary block" data-act="edit-save">Save changes</button>';
   }
+  function localTime(iso) {
+    var t = new Date(iso);
+    return String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
+  }
+  /** Whole minutes for the duration box; blank when there's no real duration (e.g. an import with one timestamp). */
+  function editMinutes(d) {
+    var m = Math.round((new Date(d.endedAt) - new Date(d.startedAt)) / 60000);
+    return m >= 1 ? String(m) : '';
+  }
+  var MAX_EDIT_MINUTES = 720;
   function editEntry(eid) {
     if (!V.edit) return null;
     return V.edit.draft.exercises.filter(function (e) { return e.id === eid; })[0] || null;
   }
   function saveEdit() {
+    if (V.edit.minsBad) { toast('Duration: enter minutes from 1 to ' + MAX_EDIT_MINUTES, 'warn', 3500); return; }
     var d = V.edit.draft;
-    var changed = JSON.stringify(d) !== V.edit.original; // saving with no changes keeps any PR badge
+    // Saving with no changes keeps any PR badge, and so does changing only the time or duration.
+    var setsOnly = function (w) { return JSON.stringify(Object.assign({}, w, { startedAt: null, endedAt: null })); };
+    var changed = setsOnly(d) !== setsOnly(JSON.parse(V.edit.original));
     d.exercises = d.exercises.map(function (e) {
       var sets = e.sets.filter(function (s) {
         return entryKind(e) === 'timed' ? Number(s.seconds) > 0 : Number(s.reps) > 0;
@@ -2147,6 +2163,17 @@
       start.setFullYear(+parts[0], +parts[1] - 1, +parts[2]);
       d.startedAt = start.toISOString();
       d.endedAt = new Date(start.getTime() + length).toISOString();
+    } else if (f === 'edit-time' && V.edit) {
+      var tm = /^(\d{1,2}):(\d{2})/.exec(el.value); if (!tm) return;
+      var d2 = V.edit.draft, st = new Date(d2.startedAt), len = new Date(d2.endedAt) - st;
+      st.setHours(+tm[1], +tm[2], 0, 0);
+      d2.startedAt = st.toISOString();
+      d2.endedAt = new Date(st.getTime() + len).toISOString();
+    } else if (f === 'edit-mins' && V.edit) {
+      var mins = /^\s*\d+\s*$/.test(el.value) ? parseInt(el.value, 10) : NaN;
+      V.edit.minsBad = !!el.value.trim() && !(mins >= 1 && mins <= MAX_EDIT_MINUTES);
+      if (!(mins >= 1 && mins <= MAX_EDIT_MINUTES)) return;
+      V.edit.draft.endedAt = new Date(new Date(V.edit.draft.startedAt).getTime() + mins * 60000).toISOString();
     } else if (f === 'bar') {
       var bar = parseNum(el.value);
       if (bar > 0) {

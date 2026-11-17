@@ -209,6 +209,8 @@ h3, h2.h-lift { font-size: 20px; font-weight: 700; line-height: 1.05; overflow-w
 .stepper { grid-area: step; display: inline-flex; align-items: center; gap: 4px; justify-self: start; background: var(--raised); border-radius: 12px; }
 .stepper button { width: 44px; height: 44px; font-size: 20px; color: var(--text); }
 .stepper span { min-width: 58px; text-align: center; font-family: var(--cond); font-weight: 700; font-size: 17px; font-variant-numeric: tabular-nums; }
+.field-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.field-pair .field { min-width: 0; }
 .tpl-plan { grid-area: step; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .tpl-reps { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
 .tpl-reps input { width: 72px; height: 44px; border-radius: 12px; border: 1px solid var(--line); background: var(--raised); color: var(--text); text-align: center;

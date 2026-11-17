@@ -97,6 +97,8 @@ Rep targets, progression and stale workouts (1.7.1, Kevin chose these from the r
 - **Progression (double progression)**: `M.progressionFor` — when every working set last time reached the top of the range at one weight, the hint becomes +5 lb / +2.5 kg (assisted: that much less help) at the bottom of the range, with a line under the exercise saying why. Only weight / added weight / assisted lifts, only with a target. It's only a hint: tapping ✓ on an empty set takes it, like any hint; today's own weight change still wins. Otherwise the line says "Go up once every set reaches N".
 - **Stale workout**: confirming a set stamps `active.lastSetAt`. Over 4 h since the last set (or the start, with none) shows "Still going?" on Today and the workout screen with Finish / Keep going (Keep going remembered on the phone in `pr-forge:web:v1:stale-ok` until another set is logged). Finishing a stale workout sets the end time to the last set + 5 min, not now.
 
+- **Edit duration** (Kevin asked, 17 Nov): Edit workout has Started (time) and Duration (min, 1–720) next to Date. Changing only the date, time or duration doesn't mark the workout `edited`, so its PR stays (`saveEdit` compares everything except startedAt/endedAt).
+
 Not built yet from the old Expo app: lifetime milestones, weekly recap card, duplicate saved workout, exercise info/cues, equipment filter in the picker, custom plate sets, rest-done notification, Strong/Hevy import, CSV export, themes.
 
 ## How Kevin wants code work done

@@ -559,3 +559,6 @@ input::placeholder { color: var(--ghost); opacity: 1; }
 :root[data-theme="light"] .backdrop { background: rgba(26, 23, 20, .45); }
 :root[data-theme="light"] .toast { box-shadow: 0 8px 30px rgba(26, 23, 20, .18); }
 :root[data-theme="light"] .btn.danger { color: #ffffff; }
+/* The logo's silver lettering is made for a dark ground, so the splash stays dark in every theme. */
+:root[data-theme="light"] #splash { background: #0d0c0b; }
+:root[data-theme="light"] #splash .tagline { color: #a8a098; }

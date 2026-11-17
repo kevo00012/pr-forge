@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '1.7.3';
+  var VERSION = '1.8.0';
 
   var S = ST.load();
   var V = {
@@ -186,8 +186,9 @@
   /** "195 × 5", "+25 × 8", "−40 × 8", "45 sec" or "8 reps". */
   function setText(s) {
     if (s.tracking === 'timed' || (Number(s.seconds) > 0 && !(Number(s.reps) > 0))) return U.fmtNum(s.seconds) + ' sec';
-    if (Number(s.weight) > 0) return (WEIGHT_SIGN[s.tracking] || '') + U.fmtNum(s.weight) + ' × ' + U.fmtNum(s.reps);
-    return U.fmtNum(s.reps) + ' reps';
+    var rpe = s.rpe != null ? ' @' + U.fmtNum(s.rpe) : '';
+    if (Number(s.weight) > 0) return (WEIGHT_SIGN[s.tracking] || '') + U.fmtNum(s.weight) + ' × ' + U.fmtNum(s.reps) + rpe;
+    return U.fmtNum(s.reps) + ' reps' + rpe;
   }
 
   // ---------- plate calculator ----------
@@ -231,19 +232,22 @@
         numInput('reps', entry, s, { scope: opts.scope, n: opts.n }, 'Reps' + sideLow, hint ? hint.reps || '' : '', s.reps, 'numeric');
     }
     var single = kind === 'timed' || kind === 'bodyweight';
+    var rpeOn = S.settings.rpe && kind !== 'timed';
+    if (rpeOn) inputs += '<span class="cell rpe-cell"><input class="num rpe-in" data-scope="' + opts.scope + '" data-field="rpe" data-e="' + entry.id + '" data-s="' + s.id + '" inputmode="decimal" autocomplete="off" aria-label="RPE (how hard, 1 to 10), set ' + opts.n + '" placeholder="–" value="' + (s.rpe != null ? U.fmtNum(s.rpe) : '') + '"></span>';
     var warmAct = opts.scope === 'edit' ? 'edit-set-warm' : 'set-warmup';
     var endButton = opts.scope === 'edit'
       ? '<button class="check" data-act="edit-set-remove" data-e="' + entry.id + '" data-s="' + s.id + '" aria-label="Delete set ' + opts.n + '">' + icon('close') + '</button>'
       : '<button class="check' + (s.done ? ' on' : '') + '" data-act="set-toggle" data-e="' + entry.id + '" data-s="' + s.id + '" aria-label="' + (s.done ? 'Unconfirm set ' : 'Confirm set ') + opts.n + '" aria-pressed="' + (s.done ? 'true' : 'false') + '">' + icon('check') + '</button>';
-    return '<div class="set-row' + (single ? ' one' : '') + (s.done && opts.scope !== 'edit' ? ' done' : '') + (s.warmup ? ' warm' : '') + (opts.active ? ' active' : '') + '">' +
+    return '<div class="set-row' + (single ? ' one' : '') + (rpeOn ? ' rpe' : '') + (s.done && opts.scope !== 'edit' ? ' done' : '') + (s.warmup ? ' warm' : '') + (opts.active ? ' active' : '') + '">' +
       '<button class="set-n" data-act="' + warmAct + '" data-e="' + entry.id + '" data-s="' + s.id + '" aria-label="Set ' + opts.n + (s.warmup ? ', warm-up' : '') + '. Tap to toggle warm-up">' + (s.warmup ? 'W' : opts.workIdx) + '</button>' +
       inputs + endButton + '</div>';
   }
   function setHeadHtml(kind, u, side) {
     var sideTag = side ? ' <span class="head-side">' + side.toLowerCase() + '</span>' : '';
     if (kind === 'timed') return '<div class="set-row head one"><span>Set</span><span>Seconds' + sideTag + '</span><span></span></div>';
-    if (kind === 'bodyweight') return '<div class="set-row head one"><span>Set</span><span>Reps' + sideTag + '</span><span></span></div>';
-    return '<div class="set-row head"><span>Set</span><span>' + WEIGHT_SIGN[kind] + u + '</span><span></span><span>Reps' + sideTag + '</span><span></span></div>';
+    var r = S.settings.rpe;
+    if (kind === 'bodyweight') return '<div class="set-row head one' + (r ? ' rpe' : '') + '"><span>Set</span><span>Reps' + sideTag + '</span>' + (r ? '<span>RPE</span>' : '') + '<span></span></div>';
+    return '<div class="set-row head' + (r ? ' rpe' : '') + '"><span>Set</span><span>' + WEIGHT_SIGN[kind] + u + '</span><span></span><span>Reps' + sideTag + '</span>' + (r ? '<span>RPE</span>' : '') + '<span></span></div>';
   }
 
   // ---------- toasts & modals ----------
@@ -327,7 +331,18 @@
       '<button class="btn primary sm" data-act="app-reload">Reload</button></div>';
   }
 
+  var themeQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
+  function applyTheme() {
+    var t = S.settings.theme === 'system' ? (themeQuery && themeQuery.matches ? 'light' : 'dark') : S.settings.theme === 'light' ? 'light' : 'dark';
+    if (document.documentElement.dataset.theme !== t) {
+      document.documentElement.dataset.theme = t;
+      var meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute('content', t === 'light' ? '#F6F3EF' : '#0D0C0B');
+    }
+  }
+  if (themeQuery && themeQuery.addEventListener) themeQuery.addEventListener('change', function () { if (S.settings.theme === 'system') applyTheme(); });
   function render() {
+    applyTheme();
     var body;
     var g = gate();
     if (g) body = g === 'greet' ? viewGreet() : g === 'handedoff' ? viewHandedOff() : viewSignIn();
@@ -482,7 +497,9 @@
           esc(e.repsText != null ? e.repsText : IM.repTargetText(e.reps)) + '"><span class="muted small">reps</span></label></div>' +
         '<div class="tpl-tools"><button class="icon-btn" data-act="tpl-move" data-i="' + i + '" data-d="-1" aria-label="Move up"' + (i === 0 ? ' disabled' : '') + '>' + icon('up') + '</button>' +
         '<button class="icon-btn" data-act="tpl-move" data-i="' + i + '" data-d="1" aria-label="Move down"' + (i === d.exercises.length - 1 ? ' disabled' : '') + '>' + icon('down') + '</button>' +
-        '<button class="icon-btn" data-act="tpl-remove" data-i="' + i + '" aria-label="Remove">' + icon('close') + '</button></div></li>';
+        '<button class="icon-btn" data-act="tpl-remove" data-i="' + i + '" aria-label="Remove">' + icon('close') + '</button></div>' +
+        (i < d.exercises.length - 1 ? '<button class="tpl-link' + (e.superNext ? ' on' : '') + '" data-act="tpl-super" data-i="' + i + '" aria-pressed="' + !!e.superNext + '">' +
+          (e.superNext ? 'Superset with the next exercise · tap to unlink' : '+ Superset with next') + '</button>' : '') + '</li>';
     }).join('');
     return '<header class="top row"><button class="btn ghost sm" data-act="template-cancel">' + icon('back', 'sm') + 'Back</button>' +
       '<h1 class="h-sm">' + (d.id ? 'Edit routine' : 'New routine') + '</h1><span></span></header>' +
@@ -505,15 +522,17 @@
     a.exercises.forEach(function (e) {
       e.sets.forEach(function (s) { total++; if (s.done) confirmed++; });
     });
+    var supNames = supersetNames(a.exercises);
     var cards = a.exercises.map(function (entry) {
       var ex = exById(entry.exerciseId);
+      var sup = supNames[entry.id] || '';
       var side = sideLabel(ex);
       var doneSets = entry.sets.filter(function (s) { return s.done; }).length;
       if (entry !== current) {
         var allDone = doneSets === entry.sets.length;
         var label = allDone ? icon('check') + 'Done' : doneSets ? doneSets + ' of ' + entry.sets.length + ' sets' : entry === nextEntry ? 'Next' : 'Later';
         return '<button class="ex-row' + (allDone ? ' done' : '') + '" data-act="ex-focus" data-e="' + entry.id + '">' +
-          '<span class="ex-row-text"><span class="ex-row-label">' + label + '</span><span class="ex-row-name">' + esc(ex.name) + '</span></span>' +
+          '<span class="ex-row-text"><span class="ex-row-label">' + label + (sup ? ' · ' + sup : '') + '</span><span class="ex-row-name">' + esc(ex.name) + '</span></span>' +
           '<span class="ex-row-plan">' + (allDone ? doneSets + ' set' + (doneSets === 1 ? '' : 's') : planText(entry.exerciseId, entry.sets.length, a.unit, a.id)) +
           (side ? '<small>' + side.toLowerCase() + '</small>' : '') + '</span></button>';
       }
@@ -536,7 +555,7 @@
         return html;
       }).join('');
       return '<section class="card ex-card" aria-label="' + esc(ex.name) + '"><div class="ex-head"><div class="ex-head-text"><h2>' + esc(ex.name) + '</h2>' +
-        '<p class="ex-meta">' + esc(ex.equipment) + (side ? ' · ' + side : '') + (lastText ? ' · ' + lastText : '') + '</p>' + goalHtml(entry, last, a.unit, kind) + '</div>' +
+        '<p class="ex-meta">' + (sup ? '<b class="sup-tag">' + sup + '</b> · ' : '') + esc(ex.equipment) + (side ? ' · ' + side : '') + (lastText ? ' · ' + lastText : '') + '</p>' + goalHtml(entry, last, a.unit, kind) + '</div>' +
         '<div class="ex-tools">' + (best ? '<span class="ex-best" title="Your best so far">' + best + '</span>' : '') +
         '<button class="icon-btn" data-act="ex-remove" data-e="' + entry.id + '" aria-label="Remove exercise">' + icon('close', 'sm') + '</button></div></div>' +
         setHeadHtml(kind, a.unit, side) +
@@ -545,6 +564,7 @@
         (kind === 'weight' || kind === 'weighted' ? '<button class="btn ghost sm" data-act="warmup-add" data-e="' + entry.id + '">' + icon('plus', 'sm') + 'Warm-up</button>' : '') +
         (entry.sets.length > 1 ? '<button class="btn ghost sm" data-act="set-remove" data-e="' + entry.id + '">Remove last set</button>' : '') +
         '<button class="btn ghost sm" data-act="ex-swap" data-e="' + entry.id + '">Swap</button>' +
+        (a.exercises[a.exercises.length - 1] !== entry ? '<button class="btn ghost sm" data-act="ex-super" data-e="' + entry.id + '" aria-pressed="' + !!entry.superNext + '">' + (entry.superNext ? 'Unlink next' : 'Superset with next') + '</button>' : '') +
         '<button class="btn ghost sm" data-act="ex-type" data-e="' + entry.id + '" aria-label="Logging type: ' + trackingLabel(kind) + '. Tap to change">' + trackingLabel(kind) + '</button>' +
         '<button class="icon-btn boxed" data-act="ex-move" data-e="' + entry.id + '" data-d="-1" aria-label="Move ' + esc(ex.name) + ' up"' + (a.exercises[0] === entry ? ' disabled' : '') + '>' + icon('up', 'sm') + '</button>' +
         '<button class="icon-btn boxed" data-act="ex-move" data-e="' + entry.id + '" data-d="1" aria-label="Move ' + esc(ex.name) + ' down"' + (a.exercises[a.exercises.length - 1] === entry ? ' disabled' : '') + '>' + icon('down', 'sm') + '</button>' +
@@ -747,7 +767,7 @@
         : '<button class="btn ghost block" data-act="records-all">Show all records (' + otherPrs.length + ' more)</button>';
       return header + (allPrs.length ? mainCard + otherCard : '<section class="card"><ul class="prs"><li class="muted small">No records yet.</li></ul></section>') + allEx;
     }
-    return header + strengthCard(mainIds) + ledeHtml + (trends.length ? how : '') + weeklyChart() + trendHtml + muscleCard() + allEx;
+    return header + strengthCard(mainIds) + ledeHtml + (trends.length ? how : '') + weeklyChart() + trendHtml + muscleCard() + bodyWeightCard() + allEx;
   }
   /** Personal records, one row per lift; each opens that lift's page. */
   function recordsHtml(onlyId) {
@@ -830,11 +850,20 @@
       '<header class="top"><h1>Settings</h1></header>' +
       '<section class="card"><h2 class="card-title">Account &amp; backup</h2>' + acct +
       '<div class="setting col"><span>Backup file</span><p class="muted small">Your workouts back up to your account automatically. You can also save a copy as a file, or restore one (this replaces everything, here and in your account).</p>' +
-      '<div class="row-2"><button class="btn ghost" data-act="export">Export backup</button><button class="btn ghost" data-act="import">Restore backup</button></div></div></section>' +
+      '<div class="row-2"><button class="btn ghost" data-act="export">Export backup</button><button class="btn ghost" data-act="import">Restore backup</button></div></div>' +
+      '<div class="setting col"><span>Spreadsheet (CSV)</span><p class="muted small">Every set as a row, for Excel, Numbers or Google Sheets. It can’t be restored; use the backup file for that.</p>' +
+      '<button class="btn ghost block" data-act="export-csv">Export CSV</button></div></section>' +
+      '<section class="card"><h2 class="card-title">Appearance</h2><div class="setting"><span>Theme</span><div class="seg">' +
+        [['dark', 'Dark'], ['light', 'Light'], ['system', 'Phone']].map(function (o) {
+          var on = (S.settings.theme || 'dark') === o[0];
+          return '<button class="' + (on ? 'on' : '') + '" data-act="set-theme" data-v="' + o[0] + '" aria-pressed="' + on + '"' + (o[0] === 'system' ? ' aria-label="Match phone"' : '') + '>' + o[1] + '</button>';
+        }).join('') + '</div></div></section>' +
       '<section class="card"><h2 class="card-title">Logging</h2>' +
       '<div class="setting"><span>Units</span><div class="seg"><button class="' + (unit() === 'lb' ? 'on' : '') + '" data-act="set-unit" data-v="lb" aria-pressed="' + (unit() === 'lb') + '">lb</button>' +
       '<button class="' + (unit() === 'kg' ? 'on' : '') + '" data-act="set-unit" data-v="kg" aria-pressed="' + (unit() === 'kg') + '">kg</button></div></div>' +
       '<div class="setting col"><span>Rest timer after each set</span><div class="chips">' + restChips + '</div></div>' +
+      '<div class="setting col"><span>RPE (how hard each set felt)</span><p class="muted small">Adds a box after reps: 10 = nothing left, 8 = two more reps in the tank. Optional on every set.</p>' +
+        '<div class="seg"><button class="' + (S.settings.rpe ? '' : 'on') + '" data-act="set-rpe" data-v="0" aria-pressed="' + !S.settings.rpe + '">Off</button><button class="' + (S.settings.rpe ? 'on' : '') + '" data-act="set-rpe" data-v="1" aria-pressed="' + !!S.settings.rpe + '">On</button></div></div>' +
       '<label class="setting"><span>Bar weight (' + unit() + ')</span><input class="bar-input" data-field="bar" inputmode="decimal" autocomplete="off" value="' + U.fmtNum(barFor(unit())) + '"></label>' +
       '<button class="btn ghost block" data-act="exercises-open">Exercises: how each is logged, your own exercises</button></section>' +
       '<section class="card"><h2 class="card-title">Import</h2>' +
@@ -889,6 +918,37 @@
       '<div class="pr-chart-foot"><span>' + shortDate(series[0].weekStart) + '</span><strong>This week</strong></div>' +
       '<p class="muted small" data-vol-read>' + esc(weekReadout(series[series.length - 1])) + '</p>' +
       '<p class="muted small">' + f.thisWeek + ' workout' + (f.thisWeek === 1 ? '' : 's') + ' this week · ' + U.fmtNum(f.priorAverage) + ' per week over the previous 4.</p></section>';
+  }
+
+  /** Body weight, in today's unit. Change is against the closest entry from about 30 days before the latest. */
+  function bodyWeightCard() {
+    var list = S.bodyWeights || [], u = unit();
+    if (!list.length) return '<button class="btn ghost block" data-act="bw-open">' + icon('plus', 'sm') + 'Log body weight</button>';
+    var val = function (b) { return U.convert(b.weight, b.unit, u); };
+    var last = list[list.length - 1], lastT = new Date(last.date).getTime();
+    var then = null;
+    list.forEach(function (b) { var dt = lastT - new Date(b.date).getTime(); if (dt >= 21 * 864e5 && dt <= 60 * 864e5) then = b; });
+    var change = then ? Math.round((val(last) - val(then)) * 10) / 10 : null;
+    var recent = list.slice(-12).map(val);
+    return '<section class="card" aria-label="Body weight"><div class="pr-chart-head"><h2 class="card-title">Body weight</h2><span class="muted small">' + shortDate(last.date) + '</span></div>' +
+      '<div class="bw-row"><div><p class="st-total">' + U.fmtNum(Math.round(val(last) * 10) / 10) + '<small> ' + u + '</small></p>' +
+      (change !== null ? '<span class="muted small">' + (change > 0 ? '+' : change < 0 ? '−' : '±') + U.fmtNum(Math.abs(change)) + ' ' + u + ' since ' + shortDate(then.date) + '</span>' : '<span class="muted small">' + list.length + ' entr' + (list.length === 1 ? 'y' : 'ies') + '</span>') + '</div>' +
+      (recent.length > 1 ? sparkLine(recent, 'holding', 'Body weight, last ' + recent.length + ' entries') : '') + '</div>' +
+      '<button class="btn ghost block" data-act="bw-open">Log body weight</button></section>';
+  }
+  function bodyWeightModal() {
+    var u = unit(), list = (S.bodyWeights || []).slice(-8).reverse();
+    var last = S.bodyWeights && S.bodyWeights.length ? S.bodyWeights[S.bodyWeights.length - 1] : null;
+    var rows = list.map(function (b) {
+      return '<li class="bw-item"><span>' + shortDate(b.date) + ' ' + new Date(b.date).getFullYear() + '</span><strong>' + U.fmtNum(b.weight) + ' ' + b.unit + '</strong>' +
+        '<button class="icon-btn" data-act="bw-del" data-id="' + esc(b.id) + '" aria-label="Delete ' + U.fmtNum(b.weight) + ' ' + b.unit + ' on ' + shortDate(b.date) + '">' + icon('close', 'sm') + '</button></li>';
+    }).join('');
+    openModal('<h2>Body weight</h2>' +
+      '<div class="field-pair"><label class="field"><span>Weight (' + u + ')</span><input id="bw-val" inputmode="decimal" autocomplete="off" placeholder="' + (last ? U.fmtNum(Math.round(U.convert(last.weight, last.unit, u) * 10) / 10) : '') + '"></label>' +
+      '<label class="field"><span>Date</span><input id="bw-date" type="date" value="' + localDate(new Date().toISOString()) + '" max="' + localDate(new Date().toISOString()) + '"></label></div>' +
+      '<div class="modal-actions"><button class="btn ghost" data-act="modal-cancel">Close</button><button class="btn primary" data-act="bw-save">Save</button></div>' +
+      (rows ? '<h3 class="card-title">Recent</h3><ul class="bw-list">' + rows + '</ul>' : '') +
+      '<p class="muted small">Kept with your workouts and backed up to your account. Not used in any other number.</p>');
   }
 
   /** Working sets per muscle group, this week so far vs last week. Plain counts; no "ideal" ranges. */
@@ -1181,7 +1241,7 @@
         if (s.weight == null) s.weight = 0;
         return s;
       });
-      return { id: e.id, exerciseId: e.exerciseId, tracking: e.tracking, sets: sets };
+      return { id: e.id, exerciseId: e.exerciseId, tracking: e.tracking, superNext: !!e.superNext, sets: sets };
     }).filter(function (e) { return e.sets.length > 0; });
     if (!d.exercises.length) { toast('Keep at least one set, or delete this workout from History', 'warn', 3500); return; }
     d.name = (d.name || '').trim() || 'Workout';
@@ -1361,6 +1421,23 @@
     for (var i = 0; i < entry.sets.length; i++) if (entry.sets[i].id === sid) return entry.sets[i];
     return null;
   }
+  /** The superset an entry belongs to: the run of exercises linked by superNext (just [entry] when none). */
+  function supersetOf(list, entry) {
+    var i = list.indexOf(entry); if (i < 0) return [entry];
+    var a = i, b = i;
+    while (a > 0 && list[a - 1].superNext) a--;
+    while (b < list.length - 1 && list[b].superNext) b++;
+    return list.slice(a, b + 1);
+  }
+  /** "Superset A", "Superset B"… for linked exercises, by entry id. */
+  function supersetNames(list) {
+    var out = {}, letter = 0;
+    for (var i = 0; i < list.length; i++) {
+      var g = supersetOf(list, list[i]);
+      if (g.length > 1 && g[0] === list[i]) { var name = 'Superset ' + String.fromCharCode(65 + letter++); g.forEach(function (e) { out[e.id] = name; }); }
+    }
+    return out;
+  }
   /** Hint for a set: last session's matching set, following any weight change made earlier today. */
   function setHint(entry, set, last, u) {
     var plan = entry.target ? M.progressionFor(last, entry.target, u, entryKind(entry)) : null;
@@ -1437,6 +1514,7 @@
       exercises: (exercises || []).map(function (e) {
         var en = newEntry(e.exerciseId, e.sets);
         if (e.reps) en.target = { min: e.reps.min, max: e.reps.max };
+        if (e.superNext) en.superNext = true;
         return en;
       })
     };
@@ -1468,7 +1546,19 @@
     S.active.lastSetAt = new Date().toISOString();
     vibrate(12);
     if (V.focusEntry === entry.id && entry.sets.every(function (s) { return s.done; })) V.focusEntry = null;
-    if (S.settings.restSeconds > 0 && !set.warmup) V.rest = { endsAt: Date.now() + S.settings.restSeconds * 1000, total: S.settings.restSeconds * 1000 };
+    // Superset: go straight to the next linked exercise; rest only after the last one in the round.
+    var skipRest = false, group = supersetOf(S.active.exercises, entry);
+    if (group.length > 1 && !set.warmup) {
+      var gi = group.indexOf(entry);
+      for (var k = 1; k <= group.length; k++) {
+        var cand = group[(gi + k) % group.length];
+        if (cand.sets.some(function (x) { return !x.done && !x.warmup; })) {
+          if (cand !== entry) { V.focusEntry = cand.id; skipRest = gi + k < group.length; }
+          break;
+        }
+      }
+    }
+    if (S.settings.restSeconds > 0 && !set.warmup && !skipRest) V.rest = { endsAt: Date.now() + S.settings.restSeconds * 1000, total: S.settings.restSeconds * 1000 };
     var pr = !V.prShown[set.id] && M.checkPr(S.workouts, S.active, entry.id, set.id);
     if (pr) {
       V.prShown[set.id] = prKey(set);
@@ -1508,7 +1598,7 @@
     var a = S.active;
     var blanked = 0;
     var kept = a.exercises.map(function (e) {
-      return { id: e.id, exerciseId: e.exerciseId, tracking: e.tracking, sets: e.sets.filter(function (s) {
+      return { id: e.id, exerciseId: e.exerciseId, tracking: e.tracking, superNext: !!e.superNext, sets: e.sets.filter(function (s) {
         if (s.done && !setComplete(e, s)) { blanked++; return false; }
         if (s.done && (s.weight == null || s.weight === '' || !isFinite(Number(s.weight)))) s.weight = 0; // same as confirming with no weight
         return s.done;
@@ -1544,13 +1634,15 @@
   }
 
   function exportBackup() {
-    var text = ST.exportBackup(S);
-    var name = 'pr-forge-backup-' + new Date().toISOString().slice(0, 10) + '.json';
-    var blob = new Blob([text], { type: 'application/json' });
+    saveFile(ST.exportBackup(S), 'pr-forge-backup-' + new Date().toISOString().slice(0, 10) + '.json', 'application/json', 'PR Forge backup', 'Backup downloaded');
+  }
+  /** Share sheet with the file where the phone has one (iPhone: Save to Files), else a download. */
+  function saveFile(text, name, type, title, doneMsg) {
+    var blob = new Blob([text], { type: type });
     try {
-      var file = new File([blob], name, { type: 'application/json' });
+      var file = new File([blob], name, { type: type });
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        navigator.share({ files: [file], title: 'PR Forge backup' }).catch(function () { /* cancelled */ });
+        navigator.share({ files: [file], title: title }).catch(function () { /* cancelled */ });
         return;
       }
     } catch (e) { /* fall through to download */ }
@@ -1560,7 +1652,7 @@
     document.body.appendChild(a);
     a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
-    toast('Backup downloaded');
+    toast(doneMsg);
   }
 
   function importBackup(file) {
@@ -1708,7 +1800,7 @@
   /** Opens the saved-workout editor pre-filled from a finished workout. */
   function draftFromWorkout(wk) {
     V.tplDraft = { id: null, name: wk.imported && wk.name === 'Fitbod workout' ? '' : wk.name, exercises: wk.exercises.map(function (e) {
-      return { exerciseId: e.exerciseId, sets: Math.min(20, Math.max(1, e.sets.filter(function (s) { return !s.warmup; }).length)) };
+      return { exerciseId: e.exerciseId, superNext: !!e.superNext, sets: Math.min(20, Math.max(1, e.sets.filter(function (s) { return !s.warmup; }).length)) };
     }) };
     V.screen = 'template'; render();
   }
@@ -1837,6 +1929,13 @@
       if (entry.sets.some(function (s) { return s.done; })) confirmBox('Remove ' + name + '?', 'Its confirmed sets will be removed from this workout.', 'Remove', true).then(function (ok) { if (ok) go(); });
       else go();
     },
+    'ex-super': function (el) {
+      var entry = findEntry(el.dataset.e); if (!entry) return;
+      entry.superNext = !entry.superNext;
+      V.focusEntry = entry.id;
+      commit();
+      toast(entry.superNext ? 'Linked: after a set here, the next exercise opens. Rest comes after the round.' : 'Unlinked', '', 3200);
+    },
     'ex-move': function (el) {
       var list = S.active.exercises;
       var i = list.indexOf(findEntry(el.dataset.e)), j = i + (+el.dataset.d);
@@ -1926,6 +2025,7 @@
       if (j < 0 || j >= list.length) return;
       var t = list[i]; list[i] = list[j]; list[j] = t; render();
     },
+    'tpl-super': function (el) { var e = V.tplDraft.exercises[+el.dataset.i]; if (e) { e.superNext = !e.superNext; render(); } },
     'tpl-remove': function (el) { V.tplDraft.exercises.splice(+el.dataset.i, 1); render(); },
     'tpl-add-ex': function () { V.picker = { target: 'template', q: '', muscle: '', selected: {} }; render(); },
 
@@ -2184,6 +2284,27 @@
       if (S.active && S.active.unit !== S.settings.unit) toast('The workout in progress stays in ' + S.active.unit + '; new workouts use ' + S.settings.unit + '.', '', 3500);
     },
     'set-rest': function (el) { S.settings.restSeconds = +el.dataset.v; commit(); },
+    'bw-open': function () { bodyWeightModal(); },
+    'bw-save': function () {
+      var v = parseNum(document.getElementById('bw-val').value), dv = document.getElementById('bw-date').value, u = unit();
+      var lo = u === 'kg' ? 20 : 45, hi = u === 'kg' ? 400 : 900;
+      if (!(v >= lo && v <= hi)) { toast('Enter a weight between ' + lo + ' and ' + hi + ' ' + u, 'warn'); return; }
+      var when = /^\d{4}-\d{2}-\d{2}$/.test(dv) ? new Date(+dv.slice(0, 4), +dv.slice(5, 7) - 1, +dv.slice(8, 10), 12) : new Date();
+      S.bodyWeights = (S.bodyWeights || []).filter(function (b) { return localDate(b.date) !== localDate(when.toISOString()); }) // one entry per day
+        .concat([{ id: uid(), date: when.toISOString(), weight: Math.round(v * 10) / 10, unit: u }])
+        .sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+      closeModal(); commit(); toast('Saved');
+    },
+    'bw-del': function (el) {
+      S.bodyWeights = (S.bodyWeights || []).filter(function (b) { return b.id !== el.dataset.id; });
+      commit(); bodyWeightModal();
+    },
+    'set-rpe': function (el) { S.settings.rpe = el.dataset.v === '1'; commit(); },
+    'set-theme': function (el) { S.settings.theme = el.dataset.v; commit(); },
+    'export-csv': function () {
+      var text = IM.workoutsToCsv(S.workouts, function (id) { return exById(id).name; });
+      saveFile(text, 'pr-forge-workouts-' + new Date().toISOString().slice(0, 10) + '.csv', 'text/csv', 'PR Forge workouts', 'CSV downloaded');
+    },
     'export': exportBackup,
     'import': function () { var f = document.getElementById('import-file'); if (f) { f.value = ''; f.click(); } },
     'erase-all': function () {
@@ -2206,12 +2327,13 @@
     var el = ev.target;
     var f = el.dataset && el.dataset.field;
     if (!f) return;
-    if (f === 'weight' || f === 'reps' || f === 'seconds') {
+    if (f === 'weight' || f === 'reps' || f === 'seconds' || f === 'rpe') {
       var inEdit = el.dataset.scope === 'edit';
       var entry = inEdit ? editEntry(el.dataset.e) : findEntry(el.dataset.e); var set = entry && findSet(entry, el.dataset.s);
       if (!set) return;
       var n = parseNum(el.value);
-      if (f !== 'weight' && n != null) n = Math.round(n);
+      if (f === 'rpe') n = n != null && n >= 1 && n <= 10 ? Math.round(n * 2) / 2 : null;
+      else if (f !== 'weight' && n != null) n = Math.round(n);
       set[f] = n;
       if (inEdit) return;
       clearTimeout(saveTimer); saveTimer = setTimeout(save, 250);

@@ -598,3 +598,41 @@ test('sets per muscle: this week vs last week, warm-ups and unconfirmed sets ign
     { muscle: 'Biceps', thisWeek: 0, lastWeek: 2 }]);
   assert.deepEqual(m.setsByMuscle([], () => 'Chest', now), []);
 });
+
+// ---------- 1.8.0: CSV export, body weight, RPE, supersets, theme ----------
+test('CSV export: one row per confirmed set, quoted safely, oldest first', () => {
+  const ws = [
+    { name: 'Legs, heavy', unit: 'kg', startedAt: new Date(2026, 10, 12, 18, 5).toISOString(), endedAt: new Date(2026, 10, 12, 19, 15).toISOString(), imported: true,
+      exercises: [{ exerciseId: 'back-squat', sets: [{ weight: 100, reps: 5, done: true, warmup: false, rpe: 8 }] }] },
+    { name: '=cmd', unit: 'lb', startedAt: new Date(2026, 10, 10, 7, 0).toISOString(), endedAt: new Date(2026, 10, 10, 8, 0).toISOString(),
+      exercises: [{ exerciseId: 'plank', sets: [{ weight: 0, reps: null, seconds: 60, done: true, warmup: false }, { weight: null, reps: null, done: false }] },
+                  { exerciseId: 'bench-press', sets: [{ weight: 45, reps: 10, done: true, warmup: true }, { weight: 135, reps: 5, done: true }] }] }];
+  const csv = importers.workoutsToCsv(ws, (id) => ({ 'back-squat': 'Back Squat "Barbell"', plank: 'Plank', 'bench-press': 'Bench Press (Barbell)' })[id]);
+  const lines = csv.trim().split('\r\n');
+  assert.equal(lines[0], 'Date,Time,Workout,Exercise,Set,Warm-up,Weight,Unit,Reps,Seconds,RPE,Duration (min),Imported');
+  assert.equal(lines.length, 5);
+  assert.equal(lines[1], "2026-11-10,07:00,'=cmd,Plank,1,,0,lb,,60,,60,");
+  assert.equal(lines[2], "2026-11-10,07:00,'=cmd,Bench Press (Barbell),1,yes,45,lb,10,,,60,");
+  assert.equal(lines[4], '2026-11-12,18:05,"Legs, heavy","Back Squat ""Barbell""",1,,100,kg,5,,8,70,yes');
+});
+
+test('store keeps body weight, RPE, supersets and theme; drops bad values', () => {
+  const st = store.normalise({
+    workouts: [{ id: 'w', startedAt: '2026-11-01T10:00:00Z', endedAt: '2026-11-01T11:00:00Z',
+      exercises: [{ exerciseId: 'a', superNext: true, sets: [{ weight: 100, reps: 5, done: true, rpe: 8.3 }, { weight: 100, reps: 5, done: true, rpe: 14 }] }] }],
+    templates: [{ id: 't', name: 'A', exercises: [{ exerciseId: 'a', sets: 3, superNext: true }, { exerciseId: 'b', sets: 3 }] }],
+    bodyWeights: [{ id: 'x', date: '2026-11-03T12:00:00Z', weight: 180.04, unit: 'lb' }, { id: 'y', date: '2026-11-01T12:00:00Z', weight: 82, unit: 'kg' },
+      { id: 'z', date: 'nope', weight: 180 }, { id: 'q', date: '2026-11-02T12:00:00Z', weight: 5000, unit: 'lb' }],
+    settings: { theme: 'neon', rpe: 'yes' }
+  });
+  const sets = st.workouts[0].exercises[0].sets;
+  assert.equal(sets[0].rpe, 8.5);
+  assert.equal('rpe' in sets[1], false);
+  assert.equal(st.workouts[0].exercises[0].superNext, true);
+  assert.equal(st.templates[0].exercises[0].superNext, true);
+  assert.equal('superNext' in st.templates[0].exercises[1], false);
+  assert.deepEqual(st.bodyWeights.map((b) => [b.id, b.weight, b.unit]), [['y', 82, 'kg'], ['x', 180, 'lb']]);
+  assert.equal(st.settings.theme, 'dark');
+  assert.equal(st.settings.rpe, false);
+  assert.equal(store.normalise({ workouts: [], settings: { theme: 'system', rpe: true } }).settings.theme, 'system');
+});

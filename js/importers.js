@@ -405,6 +405,32 @@
   }
 
   /** A routine as plain text a friend can read, and paste into PR Forge (parseWorkoutText reads it back exactly). */
+  /**
+   * Every set as a spreadsheet row (CSV, RFC 4180 quoting), oldest workout first.
+   * Weights are in the unit each workout was logged in, as stored. nameOf(id) gives the exercise name.
+   */
+  function workoutsToCsv(workouts, nameOf) {
+    var cell = function (v) {
+      var s = v == null ? '' : String(v);
+      if (/^[=+\-@]/.test(s)) s = "'" + s;                     // never a formula in a spreadsheet
+      return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    var rows = [['Date', 'Time', 'Workout', 'Exercise', 'Set', 'Warm-up', 'Weight', 'Unit', 'Reps', 'Seconds', 'RPE', 'Duration (min)', 'Imported']];
+    workouts.slice().sort(function (a, b) { return a.startedAt < b.startedAt ? -1 : 1; }).forEach(function (w) {
+      var t = new Date(w.startedAt);
+      var date = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
+      var time = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
+      var mins = w.endedAt ? Math.round((new Date(w.endedAt) - t) / 60000) : '';
+      w.exercises.forEach(function (e) {
+        e.sets.filter(function (s) { return s.done; }).forEach(function (s, i) {
+          rows.push([date, time, w.name, nameOf(e.exerciseId), i + 1, s.warmup ? 'yes' : '', s.weight == null ? '' : s.weight, w.unit,
+            s.reps == null ? '' : s.reps, s.seconds == null ? '' : s.seconds, s.rpe == null ? '' : s.rpe, mins, w.imported ? 'yes' : '']);
+        });
+      });
+    });
+    return rows.map(function (r) { return r.map(cell).join(','); }).join('\r\n') + '\r\n';
+  }
+
   /** "8", "8-12", "8–12 reps", "8 to 12" → { min, max }; anything else (AMRAP, 30s, blank) → null. */
   function parseRepTarget(text) {
     var m = String(text == null ? '' : text).trim().match(/^(\d{1,3})(?:\s*(?:-|–|—|to)\s*(\d{1,3}))?(?:\s*reps?)?$/i);
@@ -422,7 +448,7 @@
     })).concat(['', 'Shared from PR Forge. To add it: Routines → New → Paste or import a plan.']).join('\n');
   }
 
-  var api = { parseRepTarget: parseRepTarget, repTargetText: repTargetText, routineToText: routineToText, parseCsv: parseCsv, parseFitbod: parseFitbod, parseWorkoutText: parseWorkoutText, looksLikeCsv: looksLikeCsv, pdfItemsToText: pdfItemsToText, csvToPlanText: csvToPlanText };
+  var api = { workoutsToCsv: workoutsToCsv, parseRepTarget: parseRepTarget, repTargetText: repTargetText, routineToText: routineToText, parseCsv: parseCsv, parseFitbod: parseFitbod, parseWorkoutText: parseWorkoutText, looksLikeCsv: looksLikeCsv, pdfItemsToText: pdfItemsToText, csvToPlanText: csvToPlanText };
   root.PRF = root.PRF || {};
   root.PRF.importers = api;
   if (typeof module === 'object' && module.exports) module.exports = api;

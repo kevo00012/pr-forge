@@ -34,10 +34,10 @@
   function profileOf(state) {
     var n = ST.normalise({
       settings: state.settings, customExercises: state.customExercises,
-      templates: state.templates, imports: state.imports, workouts: []
+      templates: state.templates, imports: state.imports, bodyWeights: state.bodyWeights, workouts: []
     });
     n.settings.setupDone = !!(state.settings && state.settings.setupDone);
-    return { settings: n.settings, customExercises: n.customExercises, templates: n.templates, imports: n.imports };
+    return { settings: n.settings, customExercises: n.customExercises, templates: n.templates, imports: n.imports, bodyWeights: n.bodyWeights };
   }
   function profileHash(state) { return hash(JSON.stringify(profileOf(state))); }
 
@@ -101,7 +101,7 @@
     var incoming;
     try {
       var d = remote.data;
-      incoming = profileOf({ settings: d.settings || {}, customExercises: d.customExercises || [], templates: d.templates || [], imports: d.imports || [] });
+      incoming = profileOf({ settings: d.settings || {}, customExercises: d.customExercises || [], templates: d.templates || [], imports: d.imports || [], bodyWeights: d.bodyWeights || [] });
       incoming.settings.setupDone = !!(d.settings && d.settings.setupDone);
     } catch (e) { return false; }
     meta.profileSeen = remote.updated_at;
@@ -116,12 +116,14 @@
       state.customExercises = union(state.customExercises, incoming.customExercises);
       state.templates = union(state.templates, incoming.templates);
       state.imports = union(state.imports, incoming.imports);
+      state.bodyWeights = union(state.bodyWeights || [], incoming.bodyWeights).sort(function (a, b) { return a.date < b.date ? -1 : 1; });
     } else if (before === meta.profileHash) {
       // Unchanged here since the last sync, so take the cloud's version.
       state.settings = incoming.settings;
       state.customExercises = incoming.customExercises;
       state.templates = incoming.templates;
       state.imports = incoming.imports;
+      state.bodyWeights = incoming.bodyWeights;
       meta.profileHash = profileHash(state);
     }
     // Otherwise it changed here too: this phone's version wins and is pushed.

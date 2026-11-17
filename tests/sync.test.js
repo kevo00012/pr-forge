@@ -166,3 +166,28 @@ test('settings changed on one phone reach the other', async () => {
   await run(b, cloud);
   assert.equal(b.state.settings.restSeconds, 180);
 });
+
+test('body weight, RPE and theme sync between phones (1.8.0)', async () => {
+  const cloud = fakeCloud();
+  const a = phone();
+  a.state.settings.setupDone = true;
+  a.state.settings.theme = 'light';
+  a.state.settings.rpe = true;
+  a.state.bodyWeights.push({ id: 'b1', date: '2026-11-01T12:00:00.000Z', weight: 181.4, unit: 'lb' });
+  const w = workout('w1', 10, 135); w.exercises[0].sets[0].rpe = 8.5; w.exercises[0].superNext = true;
+  a.state.workouts.push(w);
+  await run(a, cloud);
+
+  const b = phone();
+  await run(b, cloud);
+  assert.deepEqual(b.state.bodyWeights.map((x) => [x.id, x.weight]), [['b1', 181.4]]);
+  assert.equal(b.state.settings.theme, 'light');
+  assert.equal(b.state.settings.rpe, true);
+  assert.equal(b.state.workouts[0].exercises[0].sets[0].rpe, 8.5);
+  assert.equal(b.state.workouts[0].exercises[0].superNext, true);
+
+  b.state.bodyWeights.push({ id: 'b2', date: '2026-11-08T12:00:00.000Z', weight: 180, unit: 'lb' });
+  await run(b, cloud);
+  await run(a, cloud);
+  assert.deepEqual(a.state.bodyWeights.map((x) => x.id), ['b1', 'b2']);
+});

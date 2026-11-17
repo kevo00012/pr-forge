@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '1.7.2';
+  var VERSION = '1.7.3';
 
   var S = ST.load();
   var V = {
@@ -17,7 +17,7 @@
     picker: null,         // { target: 'workout'|'template'|'swap'|'edit', q, muscle, selected: {} }
     edit: null,           // { draft, original } while changing a past workout
     liftId: null,         // exercise shown on the lift detail screen
-    liftRange: 'recent',  // 'recent' (6 weeks) | 'all'
+    liftRange: '3m',      // exercise page chart: '6w' | '3m' | '1y' | 'all' (kept while the app is open)
     typeEntry: null,      // workout entry whose logging type is being chosen
     rest: null,           // { endsAt, total }
     prShown: {},          // set id -> "weight x reps" that showed a PR banner
@@ -908,24 +908,46 @@
   }
 
   /** One lift over time. Tap-free on purpose: the session list below it holds the same numbers. */
+  var LIFT_RANGES = {
+    '6w': { days: 42, label: '6 wk', words: '6 weeks' },
+    '3m': { days: 91, label: '3 mo', words: '3 months' },
+    '1y': { days: 365, label: '1 yr', words: 'year' },
+    all: { days: 0, label: 'All' }
+  };
   function liftChart(points, metric, status) {
     if (points.length < 2) return '<p class="muted small">Log another session to see a chart.</p>';
     var W = 320, H = 150, L = 8, R = 8, T = 22, B = 10;
     var vals = points.map(function (p) { return p.value; });
     var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
     var span = max - min || 1;
+    // Spaced by date, so a break from training shows as a gap instead of being squeezed out.
+    var t0 = new Date(points[0].date).getTime(), t1 = new Date(points[points.length - 1].date).getTime();
     var xy = points.map(function (p, i) {
-      return [L + (i * (W - L - R)) / (points.length - 1), T + (H - T - B) * (max === min ? 0.5 : 1 - (p.value - min) / span)];
+      var f = t1 > t0 ? (new Date(p.date).getTime() - t0) / (t1 - t0) : i / (points.length - 1);
+      return [L + f * (W - L - R), T + (H - T - B) * (max === min ? 0.5 : 1 - (p.value - min) / span)];
     });
     var last = xy[xy.length - 1];
+    var many = points.length > 40; // on long ranges only the latest session gets a dot
     var dots = xy.map(function (c, i) {
+      if (many && i !== xy.length - 1) return '';
       return '<circle cx="' + c[0].toFixed(1) + '" cy="' + c[1].toFixed(1) + '" r="4"' + (i === xy.length - 1 ? ' class="dot-' + status + '"' : '') + '><title>' +
         shortDate(points[i].date) + ': ' + metricValue(metric, points[i].value) + ' ' + metricUnit(metric) + '</title></circle>';
     }).join('');
     var label = points.map(function (p) { return shortDate(p.date) + ' ' + metricValue(metric, p.value); }).join(', ');
+    // A break of 8+ weeks is drawn as a faint dashed link, so time off doesn't look like a sudden drop.
+    var GAP_MS = 56 * 86400000, lines = '', run = [xy[0]];
+    var pt = function (c) { return c[0].toFixed(1) + ',' + c[1].toFixed(1); };
+    for (var i = 1; i < xy.length; i++) {
+      if (new Date(points[i].date) - new Date(points[i - 1].date) >= GAP_MS) {
+        lines += (run.length > 1 ? '<polyline points="' + run.map(pt).join(' ') + '"/>' : '') + '<line class="gap" x1="' + xy[i - 1][0].toFixed(1) + '" y1="' + xy[i - 1][1].toFixed(1) + '" x2="' + xy[i][0].toFixed(1) + '" y2="' + xy[i][1].toFixed(1) + '"/>';
+        run = [];
+      }
+      run.push(xy[i]);
+    }
+    if (run.length > 1) lines += '<polyline points="' + run.map(pt).join(' ') + '"/>';
     return '<svg class="lift-chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(metricUnit(metric) + ' by session: ' + label) + '">' +
       '<line class="axis" x1="' + L + '" x2="' + (W - R) + '" y1="' + (H - 1) + '" y2="' + (H - 1) + '"/>' +
-      '<polyline points="' + xy.map(function (c) { return c[0].toFixed(1) + ',' + c[1].toFixed(1); }).join(' ') + '"/>' + dots +
+      lines + dots +
       '<text x="' + Math.min(last[0], W - R) + '" y="' + Math.max(12, last[1] - 10).toFixed(1) + '" text-anchor="end">' + metricValue(metric, points[points.length - 1].value) + '</text></svg>';
   }
 
@@ -957,11 +979,20 @@
         '<section class="card empty"><p class="muted small">No sessions logged yet' + (exKind(ex.id) === 'assisted' ? ', and assisted lifts have no trend' : '') + '. Its chart and records appear after you log it.</p></section>' +
         liftManageHtml(ex);
     }
-    var cutoff = Date.now() - 42 * 86400000;
-    var shown = V.liftRange === 'all' ? trend.points : trend.points.filter(function (p) { return new Date(p.date).getTime() >= cutoff; });
-    var rangeBtn = function (id, text) {
-      return '<button class="' + (V.liftRange === id ? 'on' : '') + '" data-act="lift-range" data-v="' + id + '" aria-pressed="' + (V.liftRange === id) + '">' + text + '</button>';
-    };
+    var range = LIFT_RANGES[V.liftRange] || LIFT_RANGES['3m'];
+    var cutoff = range.days ? Date.now() - range.days * 86400000 : -Infinity;
+    var shown = trend.points.filter(function (p) { return new Date(p.date).getTime() >= cutoff; });
+    var rangeBtns = Object.keys(LIFT_RANGES).map(function (id) {
+      var on = range === LIFT_RANGES[id];
+      return '<button class="' + (on ? 'on' : '') + '" data-act="lift-range" data-v="' + id + '" aria-pressed="' + on + '">' + LIFT_RANGES[id].label + '</button>';
+    }).join('');
+    var chart = shown.length >= 2 ? liftChart(shown, trend.metric, trend.status)
+      : '<p class="muted small">' + (shown.length ? 'Only one session' : 'No sessions') + (range.days ? ' in the last ' + range.words : ' so far') + '.' + (trend.points.length > shown.length ? ' Try a longer range.' : '') + '</p>';
+    if (shown.length >= 2) {
+      var top = shown.reduce(function (a, p) { return p.value > a.value ? p : a; });
+      chart += '<div class="pr-chart-foot"><span>' + shortDate(shown[0].date) + ' ' + new Date(shown[0].date).getFullYear() + '</span><span>' + shortDate(shown[shown.length - 1].date) + '</span></div>' +
+        '<p class="muted small">' + shown.length + ' sessions · best ' + metricValue(trend.metric, top.value) + ' ' + metricUnit(trend.metric) + ' on ' + shortDate(top.date) + ' ' + new Date(top.date).getFullYear() + '</p>';
+    }
     var sessions = trend.points.slice().reverse().map(function (p) {
       var bestSet = p.set ? U.fmtNum(U.fromLb(p.set.weightLb, unit())) + ' ' + unit() + ' × ' + p.set.reps + ' · ' : '';
       return '<li><button class="session-row" data-act="history-open" data-id="' + esc(p.workoutId) + '"><span>' + shortDate(p.date) + ' ' + new Date(p.date).getFullYear() + '</span>' +
@@ -975,8 +1006,8 @@
       '<div class="lift-head"><span class="trend-num">' + metricValue(trend.metric, trend.best) + '<small> ' + metricUnit(trend.metric) + ' best, 90 days</small></span>' +
       '<span class="pill ' + trend.status + '">' + STATUS_LABEL[trend.status] + '</span></div>' +
       '<p class="lede">' + trend.text + '. ' + trend.totalSessions + ' session' + (trend.totalSessions === 1 ? '' : 's') + ' logged' + allTimeNote(trend) + '.</p>' +
-      '<section class="card"><div class="pr-chart-head"><h2 class="card-title">Each session’s best</h2><div class="seg">' + rangeBtn('recent', '6 wk') + rangeBtn('all', 'All') + '</div></div>' +
-      (shown.length ? liftChart(shown, trend.metric, trend.status) : '<p class="muted small">No sessions in the last 6 weeks.</p>') + '</section>' +
+      '<section class="card"><h2 class="card-title">Each session’s best</h2><div class="seg seg-full" role="group" aria-label="Chart range">' + rangeBtns + '</div>' +
+      chart + '</section>' +
       ideas +
       '<section class="card"><h2 class="card-title">Record</h2><ul class="prs">' + recordsHtml(ex.id) + '</ul></section>' +
       '<section class="card"><h2 class="card-title">Sessions</h2><ul class="session-list">' + sessions + '</ul></section>' +
@@ -1980,7 +2011,7 @@
     },
     'edit-ex-add': function () { V.picker = { target: 'edit', q: '', muscle: '', selected: {} }; render(); },
 
-    'lift-open': function (el) { V.liftId = el.dataset.id; V.liftFrom = el.dataset.from || 'progress'; V.liftRange = 'recent'; V.screen = 'lift'; render(); },
+    'lift-open': function (el) { V.liftId = el.dataset.id; V.liftFrom = el.dataset.from || 'progress'; V.screen = 'lift'; render(); },
     'lift-pin': function (el) {
       var id = el.dataset.id, list = (S.settings.pinned || []).slice(), at = list.indexOf(id);
       if (at !== -1) { list.splice(at, 1); S.settings.pinned = list; commit(); toast('Unpinned'); return; }
@@ -2036,7 +2067,7 @@
       if (V.liftFrom === 'exercises') V.screen = 'exercises'; else { V.screen = null; V.tab = 'progress'; }
       render();
     },
-    'lift-range': function (el) { V.liftRange = el.dataset.v === 'all' ? 'all' : 'recent'; render(); },
+    'lift-range': function (el) { V.liftRange = LIFT_RANGES[el.dataset.v] ? el.dataset.v : '3m'; render(); },
     'vol-tap': function (el) {
       var read = document.querySelector('[data-vol-read]');
       if (read) read.textContent = el.dataset.read;

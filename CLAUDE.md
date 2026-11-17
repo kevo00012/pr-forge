@@ -10,7 +10,7 @@ Philosophy: **Make logging effortless. Make progress obvious. Keep the lifter in
   - `index.html`, `css/app.css`
   - `js/units.js` (lb/kg), `js/metrics.js` (volume, e1RM, PRs, trends, hints), `js/store.js` (localStorage + backup; unknown fields are dropped on load, so new saved fields must be added there; settings, customs and templates also go through `sync.profileOf`), `js/sync.js` (cloud sync rules, pure), `js/cloud.js` (Google sign-in via Supabase, network, sync timing), `js/vendor/supabase.js` (supabase-js 2.118.0 UMD, MIT), `js/plates.js` (plate calculator), `js/importers.js` (Fitbod CSV), `js/exercises.js` (built-in list and logging types), `js/app.js` (all UI)
   - `sw.js` (offline cache; bump `CACHE` on every release, which is also what makes phones show "Update ready"), `manifest.webmanifest`. Since 1.6.2 the app checks for a new `sw.js` when it comes to the front and every 30 min; when a new one takes over, an "Update ready · Reload" bar shows at the top of the screen (never on the logging or edit-workout screens; the app never reloads by itself). The home-screen icon is copied by iOS when the app is added, so only an icon change needs a re-add.
-  - `tests/logic.test.js`, `tests/sync.test.js`: run `node --test` in this folder (Node 20+). 50 tests, all passing as of 17 Nov 2026.
+  - `tests/logic.test.js`, `tests/sync.test.js`: run `node --test` in this folder (Node 20+). 51 tests, all passing as of 17 Nov 2026.
   - `supabase/schema.sql`: database tables, row level security and grants; run in Supabase → SQL Editor. Project URL `https://pvtcqdtqycihlontmirl.supabase.co`; the publishable key is in `js/cloud.js` (public by design). Never commit the secret key, database password or Google client secret.
 - Requirements doc (PRD): https://claude.ai/artifact/BRwXUQBAEp5rhWqbmuTFsv
 - Brand guide ("PR Forge Brand", 3 Nov 2026): https://claude.ai/artifact/Afwbg2BV4CiH7j4hCP2wCk. Logo versions and when to use each, colour tokens with contrast notes, type scale, layout, voice and tone. Clear-space and minimum-size rules in it were proposed by Claude, not yet confirmed by Kevin. Update it when colours, type or logo files change.
@@ -99,7 +99,12 @@ Rep targets, progression and stale workouts (1.7.1, Kevin chose these from the r
 
 - **Edit duration** (Kevin asked, 17 Nov): Edit workout has Started (time) and Duration (min, 1–720) next to Date. Changing only the date, time or duration doesn't mark the workout `edited`, so its PR stays (`saveEdit` compares everything except startedAt/endedAt).
 
-Not built yet from the old Expo app: lifetime milestones, weekly recap card, duplicate saved workout, exercise info/cues, equipment filter in the picker, custom plate sets, rest-done notification, Strong/Hevy import, CSV export, themes.
+Sets per muscle, warm-up button, duplicate routine (1.7.2, Kevin chose these, 17 Nov 2026):
+- **Sets per muscle** card on Progress → Trends, after the main lift cards (`M.setsByMuscle`, `muscleCard`): working sets this week so far (from Monday) vs last week, by each exercise's main muscle (`ex.muscle`; custom ones are often "Other"). Warm-ups and unconfirmed sets don't count; per-arm sets count once. Plain counts, no "ideal" ranges.
+- **Warm-up** button on the open exercise card (weight × reps and added-weight lifts only) adds a warm-up set after any existing warm-ups, before the first working set. Tapping a set number still toggles warm-up.
+- **Duplicate routine** in the routine editor (saved routines only): opens an unsaved copy named "<name> copy" with the same exercises, sets and rep targets; the original isn't changed (unsaved edits in the editor go into the copy, not the original).
+
+Not built yet from the old Expo app: lifetime milestones, weekly recap card, exercise info/cues, equipment filter in the picker, custom plate sets, rest-done notification, Strong/Hevy import, CSV export, themes.
 
 ## How Kevin wants code work done
 

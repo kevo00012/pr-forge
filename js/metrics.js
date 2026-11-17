@@ -297,6 +297,31 @@
   }
 
   /** Last `weeks` calendar weeks of volume, oldest first; the final one is this week. */
+  /**
+   * Working sets per muscle group, this week so far (from Monday) and last week.
+   * Warm-ups don't count; per-arm sets count once. `muscleOf(exerciseId)` gives the group.
+   * Returns [{ muscle, thisWeek, lastWeek }] for groups trained in either week, most sets this week first.
+   */
+  function setsByMuscle(workouts, muscleOf, now) {
+    var ws = startOfWeek(now || new Date()), lastWs = addDays(ws, -7), end = addDays(ws, 7);
+    var by = {};
+    (workouts || []).forEach(function (w) {
+      var t = new Date(w.startedAt);
+      var key = t >= ws && t < end ? 'thisWeek' : t >= lastWs && t < ws ? 'lastWeek' : null;
+      if (!key) return;
+      w.exercises.forEach(function (e) {
+        var n = e.sets.filter(isWorkingSet).length;
+        if (!n) return;
+        var m = muscleOf(e.exerciseId) || 'Other';
+        by[m] = by[m] || { muscle: m, thisWeek: 0, lastWeek: 0 };
+        by[m][key] += n;
+      });
+    });
+    return Object.keys(by).map(function (k) { return by[k]; }).sort(function (a, b) {
+      return b.thisWeek - a.thisWeek || b.lastWeek - a.lastWeek || (a.muscle < b.muscle ? -1 : 1);
+    });
+  }
+
   function weeklySeries(workouts, now, weeks) {
     var count = weeks || 8;
     var thisWeek = startOfWeek(now || new Date());
@@ -563,7 +588,7 @@
     workoutFrequency: workoutFrequency,
     lastSessionFor: lastSessionFor,
     hintFor: hintFor,
-    hintForSet: hintForSet, progressionFor: progressionFor,
+    hintForSet: hintForSet, setsByMuscle: setsByMuscle, progressionFor: progressionFor,
     strengthTotal: strengthTotal,
     E1RM_MAX_REPS: E1RM_MAX_REPS,
     suggestNext: suggestNext

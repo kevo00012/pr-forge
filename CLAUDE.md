@@ -115,6 +115,13 @@ CSV export, body weight, RPE, supersets, themes (1.8.0, Kevin: "Do 4 now", 17 No
 
 Backup file reminder (1.8.2, 18 Nov 2026): Today shows "Save a backup file?" (plain button, not orange) when there are 10+ workouts, no workout in progress, and no backup file saved on this phone in 30 days (`pr-forge:web:v1:backup-at`, set only when the share sheet finishes or the download starts; a cancelled share doesn't count). "Not now" snoozes 14 days (`pr-forge:web:v1:backup-snooze`). Both per phone, not synced. Reason: Supabase's free plan keeps no backups.
 
+Visual refinement pass (1.9.0, 18 Nov 2026, from Kevin's "PR Forge Visual Redesign & QA Brief" PDF; visual only, no logic or data changes):
+- Kept the existing colour tokens and 16px gutter (the brief's proposed values were within a shade of them; wider gutters would squeeze the logging screen at 375px). Mockup-only details with no data behind them were not built (routine category tags/filters, photos, Settings sub-pages).
+- Headings use `text-wrap: balance` (no lone "A" on its own line). Today's week strip: done = orange with a check, today = orange outline, future = dashed, with spoken labels per day.
+- Routines: Share/Edit moved into a "⋯" menu (`tpl-menu` → Edit / Share with a friend / Duplicate); exercise preview clamped to 2 lines.
+- Progress: Strength total shows its date span, a one-line definition naming the lifts, and the comparison span; the lift-status sentence became count tiles (`status-tiles`, only statuses with lifts) in a "Lift status" card holding "How trends are worked out"; weekly volume has a date under each bar ("Now" for this week) and a dashed max line with its value. Records use big condensed numbers ("306.7 lb est. 1RM · from 230 × 10") with a chevron.
+- History: meta line as separated items with an "Imported" tag. Settings regrouped: Account & cloud backup / Backup file (with the restore warning in amber) and Spreadsheet (CSV) / Appearance / Preferences / Import / Erase, shorter copy.
+
 Not built yet from the old Expo app: lifetime milestones, weekly recap card, exercise info/cues, equipment filter in the picker, custom plate sets, rest-done notification, Strong/Hevy import.
 
 ## How Kevin wants code work done

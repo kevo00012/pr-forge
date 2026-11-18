@@ -180,10 +180,13 @@ h3, h2.h-lift { font-size: 20px; font-weight: 700; line-height: 1.05; overflow-w
 .week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
 .day { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .dl { font-size: 12px; color: var(--muted); font-weight: 600; }
-.dot { width: 100%; height: 44px; border-radius: 8px; background: var(--dot-bg); border: 1px solid var(--line); }
+.dot { width: 100%; height: 44px; border-radius: 8px; background: var(--dot-bg); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; color: var(--on-accent); }
+.dot .icon { width: 20px; height: 20px; stroke-width: 2.6; }
 .day.done .dot { background: var(--accent); border-color: var(--accent); }
 .day.today .dot { border: 2px solid var(--accent); background: transparent; }
 .day.today.done .dot { background: var(--accent); }
+.day.future .dot { background: transparent; border-style: dashed; border-color: var(--line-2); }
+.day.future .dl { color: var(--faint); }
 .day.today .dl { color: var(--accent-ink); font-weight: 700; }
 .week-line { font-size: 14px; color: var(--muted); }
 .plan { display: flex; flex-direction: column; }
@@ -571,3 +574,53 @@ input::placeholder { color: var(--ghost); opacity: 1; }
 :root[data-theme="light"] .set-row.active, :root[data-theme="light"] .set-row.active .check { border-color: var(--accent-ink); }
 /* The wordmark's white "FORGE" disappears on light, and the logo files can't be recoloured, so the Today header drops it in light. */
 :root[data-theme="light"] .wordmark-img { display: none; }
+
+/* ---- Visual refinement pass (1.9.0) ---- */
+/* Headings break lines evenly, so a lone last word ("A") doesn't drop onto its own line. */
+h1, h2, h3, .hist-name, .trend-lift, .rec-name { text-wrap: balance; }
+/* Routines */
+.tpl-head h3 { min-width: 0; }
+.tpl-meta { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.clamp2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* Progress: strength total */
+.st-def { font-size: 13px; color: var(--muted); line-height: 1.4; }
+.st-change { font-family: var(--body); font-weight: 500; font-size: 13px; color: var(--muted); }
+.st-change b { font-family: var(--cond); font-weight: 800; font-size: 18px; color: var(--soft); margin-right: 2px; }
+.st-change.up b { color: var(--accent-ink); }
+/* Progress: lift status tiles */
+.status-tiles { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.status-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 0; min-height: 64px; padding: 8px 4px; border-radius: 12px; background: var(--raised); text-align: center; }
+.st-n { font-family: var(--cond); font-weight: 800; font-size: 28px; line-height: 1; font-variant-numeric: tabular-nums; }
+.st-l { font-size: 11px; font-weight: 600; color: var(--muted); line-height: 1.15; overflow-wrap: anywhere; }
+.status-tile.progressing .st-n { color: var(--accent-ink); }
+.status-tile.stalled, .status-tile.down { background: var(--warn-soft); }
+.status-tile.stalled .st-n, .status-tile.down .st-n, .status-tile.stalled .st-l, .status-tile.down .st-l { color: var(--warn); }
+.status-card .how { margin-top: 2px; }
+/* Progress: weekly volume */
+.vol-wrap { position: relative; padding-top: 18px; }
+.vol-max { position: absolute; top: 0; left: 0; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.vol-wrap::before { content: ""; position: absolute; left: 0; right: 0; top: 18px; border-top: 1px dashed var(--line); }
+.vol-labels { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); margin-top: 6px; font-size: 11px; color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; }
+.vol-labels .now { color: var(--text); font-weight: 700; }
+/* Progress: records */
+.pr-btn { flex-direction: row; align-items: center; gap: 10px; color: inherit; }
+.pr-btn > .icon { flex: none; color: var(--muted); width: 18px; height: 18px; }
+.rec-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.rec-name { font-size: 15px; }
+.pr-main { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
+.rec-num { font-family: var(--cond); font-weight: 800; font-size: 30px; line-height: 1; font-variant-numeric: tabular-nums; }
+.rec-num small { font-size: 15px; font-weight: 600; color: var(--muted); }
+.rec-sub { font-family: var(--body); font-size: 13px; font-weight: 500; color: var(--soft); font-variant-numeric: tabular-nums; }
+/* History */
+.hist-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.hist-meta > span + span::before { content: "·"; margin: 0 6px; color: var(--faint); }
+.tag { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border-radius: 6px; border: 1px solid var(--line-2); font-size: 11px; font-weight: 600; color: var(--soft); }
+.hist-meta > .tag + span::before { content: ""; margin: 0 4px; }
+.hist-date { font-size: 13px; }
+/* Settings */
+.set-group .setting + .setting { border-top: 1px solid var(--line); padding-top: 12px; }
+.set-group > .card-title + .setting { padding-top: 0; }
+.set-label { display: flex; flex-direction: column; gap: 2px; }
+.set-label small { font-size: 13px; font-weight: 400; color: var(--muted); }
+.warn-note { color: var(--warn-text); line-height: 1.35; }
+.st-change.up { color: var(--muted); }

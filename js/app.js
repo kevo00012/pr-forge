@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '1.8.0';
+  var VERSION = '1.8.2';
 
   var S = ST.load();
   var V = {
@@ -461,7 +461,23 @@
     return '<header class="top row end"><div class="top"><p class="eyebrow">' + now.toLocaleDateString('en-US', { weekday: 'long' }) + ' · ' + now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + '</p><h1>Today</h1></div>' +
       '<div class="top-tools"><img class="wordmark-img" src="icons/wordmark.png" width="136" height="16" alt="PR Forge">' + settingsButton() + '</div></header>' +
       '<section class="week-wrap" aria-label="This week"><div class="week">' + strip + '</div><p class="week-line">' + weekLine + '</p></section>' +
-      upNext + highlights;
+      upNext + highlights + backupNudge();
+  }
+  // ----- Backup file reminder -----
+  // The cloud copy lives on Supabase's free plan, which keeps no backups of its own, so a file now and then is the
+  // safety net. Shown on Today only: never during a workout, only with 10+ workouts, at most every 30 days, snoozable.
+  var BACKUP_AT = 'pr-forge:web:v1:backup-at', BACKUP_SNOOZE = 'pr-forge:web:v1:backup-snooze';
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* private mode: the reminder just shows again */ } }
+  function backupNudge() {
+    if (S.active || S.workouts.length < 10) return '';
+    var now = Date.now(), day = 864e5;
+    var last = Number(lsGet(BACKUP_AT)) || 0, snooze = Number(lsGet(BACKUP_SNOOZE)) || 0;
+    if (now - last < 30 * day || now < snooze) return '';
+    return '<section class="card nudge" role="status"><p><b>Save a backup file?</b> ' +
+      (last ? 'Your last one was ' + shortDate(new Date(last).toISOString()) + '.' : 'You haven’t saved one on this phone yet.') +
+      ' Your workouts are backed up to your account, but a file of your own is a second copy you keep.</p>' +
+      '<div class="row-btns"><button class="btn ghost sm" data-act="export">Save backup file</button><button class="btn ghost sm" data-act="backup-snooze">Not now</button></div></section>';
   }
   function stat(label, value, cls) {
     return '<div class="stat"><span class="stat-v' + (cls ? ' ' + cls : '') + '">' + value + '</span><span class="stat-l">' + label + '</span></div>';
@@ -1634,15 +1650,18 @@
   }
 
   function exportBackup() {
-    saveFile(ST.exportBackup(S), 'pr-forge-backup-' + new Date().toISOString().slice(0, 10) + '.json', 'application/json', 'PR Forge backup', 'Backup downloaded');
+    saveFile(ST.exportBackup(S), 'pr-forge-backup-' + new Date().toISOString().slice(0, 10) + '.json', 'application/json', 'PR Forge backup', 'Backup downloaded', function () {
+      lsSet(BACKUP_AT, String(Date.now())); // only a finished save counts; a cancelled share sheet doesn't
+      render();
+    });
   }
   /** Share sheet with the file where the phone has one (iPhone: Save to Files), else a download. */
-  function saveFile(text, name, type, title, doneMsg) {
+  function saveFile(text, name, type, title, doneMsg, onSaved) {
     var blob = new Blob([text], { type: type });
     try {
       var file = new File([blob], name, { type: type });
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        navigator.share({ files: [file], title: title }).catch(function () { /* cancelled */ });
+        navigator.share({ files: [file], title: title }).then(function () { if (onSaved) onSaved(); }).catch(function () { /* cancelled */ });
         return;
       }
     } catch (e) { /* fall through to download */ }
@@ -1653,6 +1672,7 @@
     a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
     toast(doneMsg);
+    if (onSaved) onSaved();
   }
 
   function importBackup(file) {
@@ -2284,6 +2304,7 @@
       if (S.active && S.active.unit !== S.settings.unit) toast('The workout in progress stays in ' + S.active.unit + '; new workouts use ' + S.settings.unit + '.', '', 3500);
     },
     'set-rest': function (el) { S.settings.restSeconds = +el.dataset.v; commit(); },
+    'backup-snooze': function () { lsSet(BACKUP_SNOOZE, String(Date.now() + 14 * 864e5)); render(); toast('Reminder in 2 weeks. Settings → Export backup any time.', '', 3200); },
     'bw-open': function () { bodyWeightModal(); },
     'bw-save': function () {
       var v = parseNum(document.getElementById('bw-val').value), dv = document.getElementById('bw-date').value, u = unit();

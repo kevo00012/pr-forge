@@ -242,6 +242,9 @@ h3, h2.h-lift { font-size: 20px; font-weight: 700; line-height: 1.05; overflow-w
 .tpl-reps input::placeholder { color: var(--muted); font-weight: 600; }
 .ex-goal { font-size: 13px; color: var(--soft); line-height: 1.35; margin-top: 4px; }
 .ex-goal b { color: var(--text); }
+.card.nudge { gap: 10px; }
+.card.nudge p { margin: 0; line-height: 1.4; color: var(--soft); }
+.card.nudge b { color: var(--text); }
 .card.stale { gap: 10px; border-color: var(--line); }
 .card.stale p { margin: 0; line-height: 1.4; color: var(--soft); }
 .card.stale b { color: var(--text); }
@@ -562,3 +565,9 @@ input::placeholder { color: var(--ghost); opacity: 1; }
 /* The logo's silver lettering is made for a dark ground, so the splash stays dark in every theme. */
 :root[data-theme="light"] #splash { background: #0d0c0b; }
 :root[data-theme="light"] #splash .tagline { color: #a8a098; }
+/* Orange on white is 2.6:1, below the 3:1 a focus ring or state outline needs, so outlines use the darker orange in light. */
+:root[data-theme="light"] .num:focus, :root[data-theme="light"] .field input:focus, :root[data-theme="light"] .field textarea:focus,
+:root[data-theme="light"] .search:focus, :root[data-theme="light"] .bar-input:focus, :root[data-theme="light"] .tpl-reps input:focus,
+:root[data-theme="light"] .set-row.active, :root[data-theme="light"] .set-row.active .check { border-color: var(--accent-ink); }
+/* The wordmark's white "FORGE" disappears on light, and the logo files can't be recoloured, so the Today header drops it in light. */
+:root[data-theme="light"] .wordmark-img { display: none; }

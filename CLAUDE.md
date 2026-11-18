@@ -115,6 +115,19 @@ CSV export, body weight, RPE, supersets, themes (1.8.0, Kevin: "Do 4 now", 17 No
 
 Backup file reminder (1.8.2, 18 Nov 2026): Today shows "Save a backup file?" (plain button, not orange) when there are 10+ workouts, no workout in progress, and no backup file saved on this phone in 30 days (`pr-forge:web:v1:backup-at`, set only when the share sheet finishes or the download starts; a cancelled share doesn't count). "Not now" snoozes 14 days (`pr-forge:web:v1:backup-snooze`). Both per phone, not synced. Reason: Supabase's free plan keeps no backups.
 
+Visual refinement pass (1.9.0, 18 Nov 2026, from Kevin's "PR Forge Visual Redesign & QA Brief" PDF; visual only, no logic or data changes):
+- Kept the existing colour tokens and 16px gutter (the brief's proposed values were within a shade of them; wider gutters would squeeze the logging screen at 375px). Mockup-only details with no data behind them were not built (routine category tags/filters, photos, Settings sub-pages).
+- Headings use `text-wrap: balance` (no lone "A" on its own line). Today's week strip: done = orange with a check, today = orange outline, future = dashed, with spoken labels per day.
+- Routines: Share/Edit moved into a "⋯" menu (`tpl-menu` → Edit / Share with a friend / Duplicate); exercise preview clamped to 2 lines.
+- Progress: Strength total shows its date span, a one-line definition naming the lifts, and the comparison span; the lift-status sentence became count tiles (`status-tiles`, only statuses with lifts) in a "Lift status" card holding "How trends are worked out"; weekly volume has a date under each bar ("Now" for this week) and a dashed max line with its value. Records use big condensed numbers ("306.7 lb est. 1RM · from 230 × 10") with a chevron.
+- History: meta line as separated items with an "Imported" tag. Settings regrouped: Account & cloud backup / Backup file (with the restore warning in amber) and Spreadsheet (CSV) / Appearance / Preferences / Import / Erase, shorter copy.
+
+Redesign pass (2.0.0, 18 Nov 2026, Kevin asked for a fuller redesign from the same brief; visual only, logic files untouched):
+- **Settings** is now a list of rows (icon, label, current value, chevron) that open small pages (`V.setPage`: account, cloud, file, appearance, prefs, import, about; `set-page` action, Back returns to the list). Export CSV and Exercises are direct rows; Erase stays at the bottom of the list. An expired sign-in shows a "Backup paused" card with Sign in again at the top. `fileInputs()` is on every Settings page so Restore and Fitbod pickers work anywhere. `showSyncStatus` only redraws on pages that show Sign in again. `accountHtml` was removed (replaced by the account/cloud pages).
+- **Strength total**: change shown as a pill ("+216 lb · +19.5%", % of the same lifts' prior-span total) and a line of the same total at the end of each of the last 8 weeks (`strengthLine`), for the same lifts; weeks where any of them had no session in its 8 weeks are skipped, not drawn as drops. ~57 ms for Progress with 295 workouts.
+- **Weekly volume**: orange bars at 32% with the current week full orange, a 0 / half / max axis and dashed gridlines. **Lift status** tiles have icons and outlines. **Routines** cards show "Last done …" (from the workouts started from that routine) and icon meta; Start is 48px. **History** meta has clock and sets icons. **Today** secondary buttons have icons; week squares are 40px.
+- New icons in `ICONS` (same 24px line style): user, cloud, download, upload, file, sun, info, next, layers, list, flat, hold, pause, bars, fall.
+
 Not built yet from the old Expo app: lifetime milestones, weekly recap card, exercise info/cues, equipment filter in the picker, custom plate sets, rest-done notification, Strong/Hevy import.
 
 ## How Kevin wants code work done

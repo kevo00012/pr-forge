@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '2.0.0';
+  var VERSION = '2.0.1';
 
   var S = ST.load();
   var V = {
@@ -48,9 +48,31 @@
   EX.BUILT_IN.forEach(function (e) { builtInMap[e.id] = e; });
   function allExercises() { return EX.BUILT_IN.concat(S.customExercises); }
   function exById(id) {
+    var ex = baseExercise(id);
+    var pick = S.settings.exerciseSides && S.settings.exerciseSides[id];
+    if (!pick) return ex;
+    var copy = Object.assign({}, ex);
+    copy.side = pick === 'both' ? '' : pick;
+    return copy;
+  }
+  function baseExercise(id) {
     if (builtInMap[id]) return builtInMap[id];
     for (var i = 0; i < S.customExercises.length; i++) if (S.customExercises[i].id === id) return S.customExercises[i];
     return { id: id, name: 'Unknown exercise', muscle: 'Other', equipment: 'Other', side: '' };
+  }
+  var SIDE_OPTS = [
+    { v: 'both', label: 'Both sides together', hint: 'Two dumbbells or a bar, like most hammer curls. Enter the weight of one dumbbell.' },
+    { v: 'arm', label: 'One arm at a time', hint: 'Reps counted per arm, like concentration curls. Shows "Per arm".' },
+    { v: 'leg', label: 'One leg at a time', hint: 'Reps counted per leg, like split squats. Shows "Per leg".' }
+  ];
+  /** Lets you say whether a lift is done one side at a time. Only the label changes; no number is doubled or halved. */
+  function sidesModal(id) {
+    var ex = exById(id), current = ex.side === 'arm' ? 'arm' : ex.side === 'leg' ? 'leg' : 'both';
+    V.modal = { resolve: null };
+    openModal('<h2>One side at a time?</h2><p class="muted small">For ' + esc(ex.name) + '. Changes the label everywhere, past workouts included. Weights, reps and volume stay as you logged them.</p><div class="type-list">' +
+      SIDE_OPTS.map(function (o) {
+        return '<button class="type-opt' + (o.v === current ? ' on' : '') + '" data-act="ex-side-set" data-id="' + esc(id) + '" data-v="' + o.v + '" aria-pressed="' + (o.v === current) + '"><strong>' + o.label + '</strong><span class="muted small">' + o.hint + '</span></button>';
+      }).join('') + '</div><button class="btn ghost block" data-act="modal-cancel">Cancel</button>');
   }
   function sideLabel(ex) { return ex.side === 'arm' ? 'Per arm' : ex.side === 'leg' ? 'Per leg' : ''; }
 
@@ -1146,6 +1168,8 @@
     return pinButton(ex) + '<section class="card"><h2 class="card-title">Settings</h2>' +
       '<div class="setting"><span>Logged as<br><span class="muted small">' + esc(label) + '. Applies the next time you add it.</span></span>' +
       '<button class="btn ghost sm" data-act="ex-default-type" data-id="' + esc(ex.id) + '">Change</button></div>' +
+      '<div class="setting"><span>Sides<br><span class="muted small">' + (sideLabel(ex) ? 'One ' + ex.side + ' at a time (' + sideLabel(ex).toLowerCase() + ')' : 'Both sides together') + '</span></span>' +
+      '<button class="btn ghost sm" data-act="ex-sides" data-id="' + esc(ex.id) + '" aria-label="Change sides for ' + esc(ex.name) + '">Change</button></div>' +
       (ex.custom ? '<div class="row-2"><button class="btn ghost" data-act="custom-rename" data-id="' + esc(ex.id) + '">Rename</button>' +
         '<button class="btn danger-ghost" data-act="custom-delete" data-id="' + esc(ex.id) + '">Delete</button></div>' : '') + '</section>';
   }
@@ -1481,7 +1505,7 @@
         (e === firstMore ? '<h3 class="pick-group">' + (hasCommon ? 'More exercises' : 'All matches') + '</h3>' : '') +
         '<button class="pick' + (on ? ' on' : '') + '" data-act="picker-toggle" data-id="' + esc(e.id) + '" aria-pressed="' + on + '">' +
         '<span class="pick-text"><strong>' + esc(e.name) + '</strong><span class="muted small">' + esc(e.muscle) + ' · ' + esc(e.equipment) +
-        (sideLabel(e) ? ' · ' + sideLabel(e) : '') + (e.custom ? ' · Custom' : '') + '</span></span>' +
+        (sideLabel(exById(e.id)) ? ' · ' + sideLabel(exById(e.id)) : '') + (e.custom ? ' · Custom' : '') + '</span></span>' +
         '<span class="pick-box">' + (on ? icon('check') : '') + '</span></button>';
     }).join('');
     return rows || '<p class="muted small center pad">No matches. You can create it as a custom exercise.</p>';
@@ -1590,7 +1614,8 @@
     var current = entryKind(entry);
     openModal('<h2>How do you log it?</h2><div class="type-list">' + EX.TRACKING.map(function (t) {
       return '<button class="type-opt' + (t.id === current ? ' on' : '') + '" data-act="ex-type-set" data-v="' + t.id + '" aria-pressed="' + (t.id === current) + '"><strong>' + t.label + '</strong><span class="muted small">' + t.hint + '</span></button>';
-    }).join('') + '</div><button class="btn ghost block" data-act="modal-cancel">Cancel</button>');
+    }).join('') + '</div><button class="btn ghost block" data-act="ex-sides" data-id="' + esc(entry.exerciseId) + '">' + (sideLabel(exById(entry.exerciseId)) || 'Both sides together') + ': change</button>' +
+      '<button class="btn ghost block" data-act="modal-cancel">Cancel</button>');
   }
   /** Replaces the lift in place: same position and number of sets, values cleared so old numbers can't carry over. */
   function swapEntry(entryId, exerciseId) {
@@ -2262,6 +2287,13 @@
       openModal('<h2>How do you log it?</h2><p class="muted small">Used the next time you add ' + esc(exById(id).name) + ' to a workout. Past workouts keep how they were logged.</p><div class="type-list">' + EX.TRACKING.map(function (t) {
         return '<button class="type-opt' + (t.id === current ? ' on' : '') + '" data-act="ex-default-type-set" data-id="' + esc(id) + '" data-v="' + t.id + '" aria-pressed="' + (t.id === current) + '"><strong>' + t.label + '</strong><span class="muted small">' + t.hint + '</span></button>';
       }).join('') + '</div><button class="btn ghost block" data-act="modal-cancel">Cancel</button>');
+    },
+    'ex-sides': function (el) { closeModal(); sidesModal(el.dataset.id); },
+    'ex-side-set': function (el) {
+      var id = el.dataset.id, v = el.dataset.v, base = baseExercise(id).side || '';
+      S.settings.exerciseSides = S.settings.exerciseSides || {};
+      if ((v === 'both' ? '' : v) === base) delete S.settings.exerciseSides[id]; else S.settings.exerciseSides[id] = v;
+      closeModal(); commit(); toast(v === 'both' ? 'Both sides together' : v === 'arm' ? 'Per arm' : 'Per leg');
     },
     'ex-default-type-set': function (el) {
       S.settings.exerciseTypes[el.dataset.id] = el.dataset.v;

@@ -13,7 +13,7 @@
   function defaults() {
     return {
       schema: SCHEMA,
-      settings: { unit: 'lb', restSeconds: 90, barLb: 45, barKg: 20, exerciseTypes: {}, pinned: [], rpe: false, theme: 'dark', setupDone: false },
+      settings: { unit: 'lb', restSeconds: 90, barLb: 45, barKg: 20, exerciseTypes: {}, exerciseSides: {}, pinned: [], rpe: false, theme: 'dark', setupDone: false },
       customExercises: [],
       bodyWeights: [],
       templates: [],
@@ -113,6 +113,13 @@
     if (isObj(st.exerciseTypes)) {
       Object.keys(st.exerciseTypes).forEach(function (id) {
         if (trackingOrNull(st.exerciseTypes[id])) d.settings.exerciseTypes[id] = st.exerciseTypes[id];
+      });
+    }
+    // Your choice of "one arm / one leg at a time / both together" for an exercise; a label only, never a number.
+    if (isObj(st.exerciseSides)) {
+      Object.keys(st.exerciseSides).forEach(function (id) {
+        var v = st.exerciseSides[id];
+        if (v === 'arm' || v === 'leg' || v === 'both') d.settings.exerciseSides[id] = v;
       });
     }
 

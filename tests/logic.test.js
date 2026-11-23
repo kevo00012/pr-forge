@@ -636,3 +636,9 @@ test('store keeps body weight, RPE, supersets and theme; drops bad values', () =
   assert.equal(st.settings.rpe, false);
   assert.equal(store.normalise({ workouts: [], settings: { theme: 'system', rpe: true } }).settings.theme, 'system');
 });
+
+test('exercise sides: your choice is kept, bad values dropped (2.0.1)', () => {
+  const st = store.normalise({ workouts: [], settings: { exerciseSides: { 'hammer-curl': 'arm', 'db-row': 'both', x: 'both-ish', y: 'leg' } } });
+  assert.deepEqual(st.settings.exerciseSides, { 'hammer-curl': 'arm', 'db-row': 'both', y: 'leg' });
+  assert.deepEqual(store.normalise({ workouts: [] }).settings.exerciseSides, {});
+});

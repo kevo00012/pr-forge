@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '2.0.1';
+  var VERSION = '2.1.0';
 
   var S = ST.load();
   var V = {
@@ -80,6 +80,7 @@
     if (v === null || v === undefined) return null;
     var t = String(v).replace(',', '.').trim();
     if (t === '') return null;
+    if (!/^\d*\.?\d*$/.test(t)) return null; // plain numbers only: no "1e5", no hex
     var n = Number(t);
     return isFinite(n) && n >= 0 ? n : null;
   }
@@ -379,8 +380,23 @@
     }
   }
   if (themeQuery && themeQuery.addEventListener) themeQuery.addEventListener('change', function () { if (S.settings.theme === 'system') applyTheme(); });
+  // The rest timer is kept on the phone too, so it survives the app being closed and reopened mid-rest.
+  var REST_KEY = 'pr-forge:web:v1:rest', restSaved = null;
+  function keepRest() {
+    var v = V.rest && S.active ? JSON.stringify({ w: S.active.id, e: V.rest.endsAt, t: V.rest.total }) : '';
+    if (v === restSaved) return;
+    restSaved = v;
+    try { if (v) localStorage.setItem(REST_KEY, v); else localStorage.removeItem(REST_KEY); } catch (e) { /* private mode: timer just won't survive a restart */ }
+  }
+  function restoreRest() {
+    try {
+      var r = JSON.parse(localStorage.getItem(REST_KEY) || 'null');
+      if (r && S.active && r.w === S.active.id && r.e > Date.now()) V.rest = { endsAt: r.e, total: r.t };
+    } catch (e) { /* ignore */ }
+  }
   function render() {
     applyTheme();
+    keepRest();
     var body;
     var g = gate();
     if (g) body = g === 'greet' ? viewGreet() : g === 'handedoff' ? viewHandedOff() : viewSignIn();
@@ -1683,6 +1699,34 @@
       if (!(Number(set.reps) > 0)) { toast('Enter reps first', 'warn'); render(); return; }
       if (kind === 'bodyweight' || set.weight == null) set.weight = 0;
     }
+    var odd = (kind === 'weight' || kind === 'weighted') && oddWeight(entry.exerciseId, Number(set.weight), S.active.unit);
+    if (odd) {
+      confirmBox('Is ' + U.fmtNum(set.weight) + ' ' + S.active.unit + ' right?', odd + ' Check for a typo; a wrong number would become a record that later sessions have to beat.', 'Yes, confirm').then(function (ok) {
+        if (ok) markSetDone(entry, set); else { render(); var inp = document.querySelector('.set-row.active input[data-field="weight"]'); if (inp) inp.focus(); }
+      });
+      return;
+    }
+    markSetDone(entry, set);
+  }
+  /**
+   * A weight worth double-checking before it's confirmed: over 1,000 lb / 450 kg, or more than 2.5 times (and
+   * 50 lb / 20 kg more than) your heaviest working set of this lift. Returns the reason, or '' when it looks fine.
+   */
+  function oddWeight(exerciseId, w, u) {
+    if (!(w > 0)) return '';
+    if (w > (u === 'kg' ? 450 : 1000)) return 'That’s more than anyone has lifted for most exercises.';
+    var best = 0;
+    S.workouts.forEach(function (wk) {
+      if (!wk.endedAt) return;
+      wk.exercises.forEach(function (e) {
+        if (e.exerciseId !== exerciseId) return;
+        e.sets.forEach(function (st) { if (st.done && !st.warmup && Number(st.weight) > 0) best = Math.max(best, U.convert(Number(st.weight), wk.unit, u)); });
+      });
+    });
+    if (best > 0 && w > best * 2.5 && w - best > (u === 'kg' ? 20 : 50)) return 'Your heaviest so far is ' + U.fmtNum(Math.round(best * 10) / 10) + ' ' + u + '.';
+    return '';
+  }
+  function markSetDone(entry, set) {
     set.done = true;
     S.active.lastSetAt = new Date().toISOString();
     vibrate(12);
@@ -2104,7 +2148,7 @@
       });
     },
     'rest-skip': function () { V.rest = null; render(); },
-    'rest-add': function () { if (V.rest) { V.rest.endsAt += 30000; V.rest.total += 30000; tick(); } },
+    'rest-add': function () { if (V.rest) { V.rest.endsAt += 30000; V.rest.total += 30000; keepRest(); tick(); } },
     'ex-focus': function (el) { V.focusEntry = el.dataset.e; render(); },
     'pr-close': function () { V.prMoment = null; render(); },
     'summary-done': function () { V.summary = null; V.screen = null; V.tab = 'home'; render(); },
@@ -2570,6 +2614,7 @@
       var left = V.rest.endsAt - Date.now();
       if (left <= 0) {
         V.rest = null;
+        keepRest();
         vibrate([80, 80, 80]);
         toast('Rest over — next set');
         document.querySelectorAll('.rest-dock, [data-rest-note]').forEach(function (el) { el.remove(); });
@@ -2583,6 +2628,7 @@
 
   // ---------- start-up ----------
   function boot() {
+    restoreRest();
     CLOUD.init({
       getState: function () { return S; },
       setState: function (next) { S = next; ST.save(S); },

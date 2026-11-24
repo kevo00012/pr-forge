@@ -1,0 +1,22 @@
+# Runs the logic and sync tests on every pull request and on every push to main.
+# A red check on a PR means: don't merge yet (merging to main publishes the app to everyone).
+name: Tests
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check the app's scripts parse
+        run: for f in js/*.js sw.js; do node --check "$f"; done
+      - name: Run tests
+        run: node --test

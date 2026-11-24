@@ -6,8 +6,12 @@
  *  - Finished workouts are one cloud row each. Deleting one leaves a "deleted" row so other phones delete it too.
  *  - Settings, saved workouts, custom exercises and import history are one "profile" row.
  *  - The workout in progress stays on the phone until it is finished.
- *  - "shadow" remembers a fingerprint of each item as last synced, which tells us what changed locally.
- *    If an item changed both here and in the cloud, this phone's version wins.
+ *  - "shadow" remembers a fingerprint of each workout as last synced, which tells us what changed locally.
+ *    If a workout changed both here and in the cloud, this phone's version wins.
+ *  - "profileBase" is the profile as last agreed with the cloud. When the profile changed both here and on another
+ *    device, it is merged item by item against that base (routines, custom exercises, imports and body weights by id;
+ *    settings field by field), so neither device's changes are lost. Only an item changed on both sides takes this
+ *    phone's version.
  */
 (function (root) {
   'use strict';
@@ -41,7 +45,43 @@
   }
   function profileHash(state) { return hash(JSON.stringify(profileOf(state))); }
 
-  function emptyMeta() { return { userId: null, email: '', lastPulled: null, shadow: {}, profileHash: null, profileSeen: null, lastSyncAt: null }; }
+  function emptyMeta() { return { userId: null, email: '', lastPulled: null, shadow: {}, profileHash: null, profileSeen: null, profileBase: null, lastSyncAt: null }; }
+
+  function same(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+  function isMap(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
+  /**
+   * Three-way merge of a list of items with ids. base = as last synced; local = this phone; remote = the cloud.
+   * Changed on one side only → that side's version. New on either side → kept. Deleted on one side and untouched
+   * on the other → deleted. Edited on one side and deleted on the other → kept (an edit means it's wanted).
+   * Changed on both → this phone's version.
+   */
+  function mergeList(base, local, remote) {
+    var B = byId(base || []), R = byId(remote), out = [], done = {};
+    local.forEach(function (x) {
+      done[x.id] = true;
+      var r = R[x.id], b = B[x.id];
+      if (r) out.push(b && same(x, b) ? r : x);
+      else if (!b || !same(x, b)) out.push(x);
+    });
+    remote.forEach(function (r) {
+      if (done[r.id]) return;
+      var b = B[r.id];
+      if (!b || !same(r, b)) out.push(r);
+    });
+    return out;
+  }
+  /** Field by field: a field this phone didn't change takes the cloud's value. Maps (e.g. logging types) go key by key. */
+  function mergeFields(base, local, remote) {
+    var out = {};
+    var keys = Object.keys(local).concat(Object.keys(remote).filter(function (k) { return !(k in local); }));
+    keys.forEach(function (k) {
+      var l = local[k], r = remote[k], b = base ? base[k] : undefined;
+      var v = isMap(l) && isMap(r) ? mergeFields(isMap(b) ? b : {}, l, r) : (k in local) && !same(l, b) ? l : r;
+      if (v !== undefined) out[k] = v;
+    });
+    return out;
+  }
+  function byDate(a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }
 
   /** Number of local items that haven't reached the cloud yet. */
   function pendingCount(state, meta) {
@@ -106,18 +146,31 @@
     } catch (e) { return false; }
     meta.profileSeen = remote.updated_at;
 
-    if (meta.profileHash === null) {
+    if (meta.profileHash !== null && before !== meta.profileHash && meta.profileBase) {
+      // Changed here and on another device since the last sync: merge item by item, then push the result.
+      var base = meta.profileBase, mine = profileOf(state);
+      state.settings = mergeFields(base.settings, mine.settings, incoming.settings);
+      state.settings.setupDone = !!(mine.settings.setupDone || incoming.settings.setupDone);
+      state.customExercises = mergeList(base.customExercises, mine.customExercises, incoming.customExercises);
+      state.templates = mergeList(base.templates, mine.templates, incoming.templates);
+      state.imports = mergeList(base.imports, mine.imports, incoming.imports);
+      state.bodyWeights = mergeList(base.bodyWeights, mine.bodyWeights, incoming.bodyWeights).sort(byDate);
+      meta.profileBase = incoming;
+    } else if (meta.profileHash === null || before !== meta.profileHash) {
+      // First sync on this phone, or changed on both sides by an app that kept no base copy: keep everything from both.
+      var firstTime = meta.profileHash === null;
       // First sync on this phone: keep everything from both sides.
       var setup = incoming.settings.setupDone || state.settings.setupDone;
       var types = Object.assign({}, incoming.settings.exerciseTypes, state.settings.exerciseTypes);
-      state.settings = incoming.settings;
+      if (firstTime) state.settings = incoming.settings; // later on, this phone's settings stand
       state.settings.setupDone = setup;
       state.settings.exerciseTypes = types;
       state.customExercises = union(state.customExercises, incoming.customExercises);
       state.templates = union(state.templates, incoming.templates);
       state.imports = union(state.imports, incoming.imports);
-      state.bodyWeights = union(state.bodyWeights || [], incoming.bodyWeights).sort(function (a, b) { return a.date < b.date ? -1 : 1; });
-    } else if (before === meta.profileHash) {
+      state.bodyWeights = union(state.bodyWeights || [], incoming.bodyWeights).sort(byDate);
+      meta.profileBase = incoming;
+    } else {
       // Unchanged here since the last sync, so take the cloud's version.
       state.settings = incoming.settings;
       state.customExercises = incoming.customExercises;
@@ -125,8 +178,8 @@
       state.imports = incoming.imports;
       state.bodyWeights = incoming.bodyWeights;
       meta.profileHash = profileHash(state);
+      meta.profileBase = incoming;
     }
-    // Otherwise it changed here too: this phone's version wins and is pushed.
     return profileHash(state) !== before;
   }
 
@@ -170,6 +223,7 @@
       if (out.profile) {
         steps = steps.then(function () { return remote.putProfile(out.profile); }).then(function (res) {
           meta.profileHash = out.profileHash;
+          meta.profileBase = out.profile;
           if (res && res.updated_at) meta.profileSeen = res.updated_at;
         });
       }
@@ -184,7 +238,7 @@
 
   var api = {
     hash: hash, workoutHash: workoutHash, profileOf: profileOf, profileHash: profileHash, emptyMeta: emptyMeta,
-    pendingCount: pendingCount, mergeWorkouts: mergeWorkouts, mergeProfile: mergeProfile, changesToPush: changesToPush, run: run
+    mergeList: mergeList, mergeFields: mergeFields, pendingCount: pendingCount, mergeWorkouts: mergeWorkouts, mergeProfile: mergeProfile, changesToPush: changesToPush, run: run
   };
   root.PRF = root.PRF || {};
   root.PRF.sync = api;

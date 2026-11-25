@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '2.4.0';
+  var VERSION = '2.5.0';
 
   var S = ST.load();
   var V = {
@@ -1246,7 +1246,7 @@
       '<button class="btn ghost sm" data-act="ex-default-type" data-id="' + esc(ex.id) + '">Change</button></div>' +
       '<div class="setting"><span>Sides<br><span class="muted small">' + (sideLabel(ex) ? 'One ' + ex.side + ' at a time (' + sideLabel(ex).toLowerCase() + ')' : 'Both sides together') + '</span></span>' +
       '<button class="btn ghost sm" data-act="ex-sides" data-id="' + esc(ex.id) + '" aria-label="Change sides for ' + esc(ex.name) + '">Change</button></div>' +
-      (ex.custom ? '<div class="row-2"><button class="btn ghost" data-act="custom-rename" data-id="' + esc(ex.id) + '">Rename</button>' +
+      (ex.custom ? '<div class="row-2"><button class="btn ghost" data-act="custom-rename" data-id="' + esc(ex.id) + '">Edit details</button>' +
         '<button class="btn danger-ghost" data-act="custom-delete" data-id="' + esc(ex.id) + '">Delete</button></div>' : '') + '</section>';
   }
   function exerciseInUse(id) {
@@ -1591,6 +1591,7 @@
     var words = q ? q.split(/\s+/) : [];
     return allExercises().filter(function (e) {
       if (p.muscle && e.muscle !== p.muscle) return false;
+      if (p.gear && e.equipment !== p.gear) return false;
       var hay = (e.name + ' ' + (e.alias || '') + ' ' + e.muscle + ' ' + e.equipment).toLowerCase();
       return words.every(function (wd) { return hay.indexOf(wd) !== -1; });
     }).sort(function (a, b) {
@@ -1627,11 +1628,16 @@
       var on = (m === 'All' && !p.muscle) || m === p.muscle;
       return '<button class="chip' + (on ? ' on' : '') + '" data-act="picker-muscle" data-v="' + esc(m) + '">' + esc(m) + '</button>';
     }).join('');
+    var gearChips = ['Any equipment'].concat(EX.EQUIPMENT).map(function (g) {
+      var on = (g === 'Any equipment' && !p.gear) || g === p.gear;
+      return '<button class="chip' + (on ? ' on' : '') + '" data-act="picker-gear" data-v="' + esc(g) + '" aria-pressed="' + on + '">' + esc(g) + '</button>';
+    }).join('');
     var title = p.target === 'swap' ? 'Swap exercise' : 'Add exercises';
     return '<div class="sheet-wrap"><div class="backdrop" data-act="picker-close"></div><div class="sheet" role="dialog" aria-label="' + title + '">' +
       '<div class="sheet-head"><h2>' + title + '</h2><button class="icon-btn" data-act="picker-close" aria-label="Close">' + icon('close') + '</button></div>' +
       '<input class="search" data-field="picker-q" type="search" placeholder="Search exercises" value="' + esc(p.q) + '" autocomplete="off">' +
-      '<div class="chips scroll">' + chips + '</div>' +
+      '<div class="chips scroll" role="group" aria-label="Muscle">' + chips + '</div>' +
+      '<div class="chips scroll" role="group" aria-label="Equipment">' + gearChips + '</div>' +
       '<div class="pick-list" id="pick-list">' + pickerListHtml() + '</div>' +
       '<div class="sheet-foot" id="pick-foot">' + pickerFooter() + '</div></div></div>';
   }
@@ -2341,6 +2347,14 @@
       });
       refreshPicker();
     },
+    'picker-gear': function (el) {
+      V.picker.gear = el.dataset.v === 'Any equipment' ? '' : el.dataset.v;
+      document.querySelectorAll('[data-act="picker-gear"]').forEach(function (c) {
+        var on = c.dataset.v === (V.picker.gear || 'Any equipment');
+        c.classList.toggle('on', on); c.setAttribute('aria-pressed', on);
+      });
+      refreshPicker();
+    },
     'picker-toggle': function (el) {
       var id = el.dataset.id;
       if (V.picker.target === 'swap') { swapEntry(V.picker.entryId, id); return; }
@@ -2451,8 +2465,11 @@
     'custom-rename': function (el) {
       var c = S.customExercises.filter(function (x) { return x.id === el.dataset.id; })[0]; if (!c) return;
       V.modal = { resolve: null };
-      openModal('<h2>Rename exercise</h2><label class="field"><span>Name</span><input id="cx-rename" maxlength="80" value="' + esc(c.name) + '"></label>' +
-        '<p class="muted small">The new name shows everywhere, including past workouts.</p>' +
+      var opts = function (list, cur) { return list.map(function (x) { return '<option' + (x === cur ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join(''); };
+      openModal('<h2>Edit exercise</h2><label class="field"><span>Name</span><input id="cx-rename" maxlength="80" value="' + esc(c.name) + '"></label>' +
+        '<div class="field-pair"><label class="field"><span>Main muscle</span><select id="cx-remuscle">' + opts(EX.MUSCLES.concat(['Other']), c.muscle) + '</select></label>' +
+        '<label class="field"><span>Equipment</span><select id="cx-reequip">' + opts(EX.EQUIPMENT, c.equipment) + '</select></label></div>' +
+        '<p class="muted small">Changes show everywhere, including past workouts. The muscle decides where it counts in Push · Pull · Legs.</p>' +
         '<div class="modal-actions"><button class="btn ghost" data-act="modal-cancel">Cancel</button><button class="btn primary" data-act="custom-rename-save" data-id="' + esc(c.id) + '">Save</button></div>');
     },
     'custom-rename-save': function (el) {
@@ -2460,7 +2477,11 @@
       var name = (document.getElementById('cx-rename').value || '').trim();
       if (!c) return;
       if (!name) { toast('Enter a name', 'warn'); return; }
-      c.name = name.slice(0, 80); closeModal(); commit(); toast('Renamed');
+      var mu = document.getElementById('cx-remuscle'), eq = document.getElementById('cx-reequip');
+      c.name = name.slice(0, 80);
+      if (mu && (EX.MUSCLES.indexOf(mu.value) !== -1 || mu.value === 'Other')) c.muscle = mu.value;
+      if (eq && EX.EQUIPMENT.indexOf(eq.value) !== -1) c.equipment = eq.value;
+      closeModal(); commit(); toast('Saved');
     },
     'custom-delete': function (el) {
       var id = el.dataset.id, c = S.customExercises.filter(function (x) { return x.id === id; })[0]; if (!c) return;

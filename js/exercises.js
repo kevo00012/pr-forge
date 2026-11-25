@@ -130,10 +130,29 @@
     ? (function () { try { return require('./exercise-library.js'); } catch (e) { return { rows: [], aliases: {} }; } })()
     : root.PRF.exerciseLibrary;
 
+  /**
+   * The source library leaves equipment blank for many exercises; where the name makes it plain, say so (2.5.0).
+   * Only library rows marked "Other" go through this; anything unclear stays "Other". IDs never change.
+   */
+  function equipmentFromName(name) {
+    var n = name.toLowerCase();
+    if (/\bband(s|ed)?\b/.test(n) && !/\bit band/.test(n)) return 'Band';
+    if (/kettlebell/.test(n)) return 'Kettlebell';
+    if (/barbell|axle/.test(n)) return 'Barbell';
+    if (/dumbbell/.test(n)) return 'Dumbbell';
+    if (/cable/.test(n)) return 'Cable';
+    if (/-smr\b|medicine ball|exercise ball|stability ball|physioball|\bball\b|sled|plate|rope|suspended|straps|\brings?\b|weighted|prowler|chain|tire|keg|log lift|atlas|yoke|rickshaw|sandbag|car deadlift|circus|conan|wheel|bag|harness|wrist roller|bicycl|running|balance board|bench|box|cone|hurdle|parallel bar|bars\b|stair/.test(n)) return 'Other';
+    if (/stretch|circles|pose|push-?ups?|pull-?ups?|\bchins?\b|chin-?up|\bdips?\b|muscle up|\bhops?\b|jump|bound|skip|sprint|shuffle|crawl|mountain climbers|lunge|squats?\b|bridge|tilt|drill|leap|skating|crunch|inverted row|bodyweight|windmills|toe touches|hug|knee|groin|hip flexor|quad|hamstring|calf|neck|shoulder raise|elbows back|torso rotation|looking at ceiling|otis-up|london bridges|pyramid|the straddle|upward|crucifix/.test(n)) return 'Bodyweight';
+    return 'Other';
+  }
+
   var BUILT_IN = ROWS.map(function (r) {
     return { id: r[0], name: r[1], muscle: r[2], equipment: r[3], side: r[4], custom: false, alias: LIBRARY.aliases[r[0]] || '', tracking: r[5] || '' };
   }).concat(LIBRARY.rows.map(function (r) {
-    return { id: r[0], name: r[1], muscle: r[2], equipment: r[3], side: r[4], custom: false, library: true, tracking: r[5] || '' };
+    var gear = r[3] === 'Other' ? equipmentFromName(r[1]) : r[3];
+    // Relabelled as body weight: keep logging it as weight × reps by default, as before, so nobody loses a weight box.
+    var tracking = r[5] || (r[3] === 'Other' && gear === 'Bodyweight' ? 'weight' : '');
+    return { id: r[0], name: r[1], muscle: r[2], equipment: gear, side: r[4], custom: false, library: true, tracking: tracking };
   }));
 
   // How a lift is logged. Stored on each workout entry and set when it's logged.

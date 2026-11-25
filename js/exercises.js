@@ -148,7 +148,26 @@
     return ex.tracking || (ex.equipment === 'Bodyweight' ? 'bodyweight' : 'weight');
   }
 
-  var api = { BUILT_IN: BUILT_IN, MUSCLES: MUSCLES, EQUIPMENT: EQUIPMENT, TRACKING: TRACKING, defaultTracking: defaultTracking };
+  /**
+   * Starter plans offered to new users (and under Routines → New). General starting points with rep targets,
+   * not a coached program: everything is an ordinary routine afterwards. Rows: [exercise id, sets, reps "min-max" or ''].
+   */
+  var STARTERS = [
+    { id: 'ppl', name: 'Push / Pull / Legs', hint: '3 routines, for 3 or 6 days a week', routines: [
+      { name: 'Push', rows: [['bench-press', 4, '6-10'], ['overhead-press', 3, '6-10'], ['db-incline-press', 3, '8-12'], ['lateral-raise', 3, '12-15'], ['triceps-pushdown', 3, '10-15']] },
+      { name: 'Pull', rows: [['barbell-row', 4, '6-10'], ['lat-pulldown', 3, '8-12'], ['seated-cable-row', 3, '8-12'], ['face-pull', 3, '12-15'], ['db-curl', 3, '10-12']] },
+      { name: 'Legs', rows: [['back-squat', 4, '5-8'], ['romanian-deadlift', 3, '6-10'], ['leg-press', 3, '10-12'], ['lying-leg-curl', 3, '10-12'], ['standing-calf-raise', 3, '10-15']] }
+    ] },
+    { id: 'ul', name: 'Upper / Lower', hint: '2 routines, for 2 or 4 days a week', routines: [
+      { name: 'Upper', rows: [['bench-press', 4, '6-10'], ['barbell-row', 4, '6-10'], ['db-shoulder-press', 3, '8-12'], ['lat-pulldown', 3, '8-12'], ['db-curl', 2, '10-12'], ['triceps-pushdown', 2, '10-12']] },
+      { name: 'Lower', rows: [['back-squat', 4, '5-8'], ['romanian-deadlift', 3, '6-10'], ['leg-press', 3, '10-12'], ['seated-leg-curl', 3, '10-12'], ['standing-calf-raise', 3, '10-15'], ['plank', 3, '']] }
+    ] },
+    { id: 'fb', name: 'Full Body', hint: '1 routine, for 2 or 3 days a week', routines: [
+      { name: 'Full Body', rows: [['back-squat', 3, '5-8'], ['bench-press', 3, '6-10'], ['barbell-row', 3, '6-10'], ['overhead-press', 2, '8-10'], ['romanian-deadlift', 2, '8-10'], ['plank', 2, '']] }
+    ] }
+  ];
+
+  var api = { STARTERS: STARTERS, BUILT_IN: BUILT_IN, MUSCLES: MUSCLES, EQUIPMENT: EQUIPMENT, TRACKING: TRACKING, defaultTracking: defaultTracking };
 
   root.PRF = root.PRF || {};
   root.PRF.exercises = api;

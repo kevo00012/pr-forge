@@ -695,3 +695,13 @@ a.btn { color: var(--text); text-decoration: none; }
 .ppl-chip span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .top .eyebrow { white-space: nowrap; }
 .ppl-chip b { font-family: var(--cond); font-weight: 800; font-size: 14px; letter-spacing: .04em; text-transform: uppercase; color: var(--text); }
+
+/* What changed (2.4.0) */
+.chg-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.chg-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name sets" "text sets"; gap: 2px 10px; padding: 10px 0; border-top: 1px solid var(--line); align-items: center; }
+.chg-row:first-child { border-top: 0; padding-top: 0; }
+.chg-name { grid-area: name; font-weight: 600; font-size: 15px; min-width: 0; }
+.chg-text { grid-area: text; font-size: 13px; color: var(--muted); }
+.chg-text.up { color: var(--accent-ink); font-weight: 600; }
+.chg-sets { grid-area: sets; font-family: var(--cond); font-weight: 700; font-size: 17px; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chg-sets small { display: block; font-family: var(--body); font-weight: 400; font-size: 12px; color: var(--muted); }

@@ -73,7 +73,7 @@
 
   /** Summarise one exercise inside one workout (merging repeated entries). */
   function summarise(workout, exerciseId, skipSetId) {
-    var out = { topE1rm: 0, topWeightLb: 0, topWeightReps: 0, bestE1rmSet: null, maxBwReps: 0, maxSeconds: 0, leastAssistLb: null, assistReps: 0, volumeLb: 0, sets: 0 };
+    var out = { topE1rm: 0, topWeightLb: 0, topWeightReps: 0, bestE1rmSet: null, maxBwReps: 0, maxSeconds: 0, leastAssistLb: null, assistReps: 0, volumeLb: 0, sets: 0, weightSets: [] };
     (workout.exercises || []).forEach(function (ex) {
       if (ex.exerciseId !== exerciseId) return;
       (ex.sets || []).forEach(function (s) {
@@ -91,6 +91,7 @@
         }
         out.volumeLb += lb * reps;
         if (lb > 0) {
+          out.weightSets.push([lb, reps]);
           var est = e1rm(lb, reps);
           if (est > out.topE1rm) {
             out.topE1rm = est;
@@ -106,6 +107,28 @@
       });
     });
     return out;
+  }
+
+  /** Most reps in any of these [lb, reps] sets at this weight or heavier (0 if none). */
+  function repsAtOrAbove(sets, lb) {
+    var best = 0;
+    for (var i = 0; i < sets.length; i++) if (sets[i][0] >= lb - EPS_LB && sets[i][1] > best) best = sets[i][1];
+    return best;
+  }
+  /**
+   * The weight PRs besides estimated 1RM, for a set of lb x reps against earlier [lb, reps] sets:
+   * 'weight' = heaviest weight ever on this lift; 'repsAt' = more reps than ever at this weight or heavier.
+   * Rep PRs only count from half your heaviest weight up, so light back-off sets don't count as records.
+   */
+  var REPS_PR_MIN_SHARE = 0.5;
+  function weightPr(prior, lb, reps) {
+    if (!prior.length) return null;
+    var heaviest = 0;
+    prior.forEach(function (x) { if (x[0] > heaviest) heaviest = x[0]; });
+    if (lb > heaviest + EPS_LB) return { type: 'weight', weightLb: lb, reps: reps, previousLb: heaviest };
+    if (lb < heaviest * REPS_PR_MIN_SHARE) return null;
+    var before = repsAtOrAbove(prior, lb);
+    return before > 0 && reps > before ? { type: 'repsAt', weightLb: lb, reps: reps, previous: before } : null;
   }
 
   /** Chronological sessions of one exercise across finished workouts. */
@@ -126,7 +149,9 @@
   /**
    * Did confirming this set in the active workout set a new PR?
    * Returns null, or { type: 'e1rm', e1rmLb, weightLb, reps, previousLb }
-   * or { type: 'reps', reps, previous } (body-weight sets).
+   * or { type: 'weight', weightLb, reps, previousLb } (heaviest ever) or { type: 'repsAt', weightLb, reps, previous }
+   * (more reps than ever at that weight or heavier), or { type: 'reps', reps, previous } (body-weight sets).
+   * Estimated 1RM is checked first, then heaviest, then reps at a weight.
    * No PR on the first-ever session of a lift, on warm-ups, or on unconfirmed sets.
    */
   function checkPr(workouts, active, entryId, setId) {
@@ -162,7 +187,9 @@
       if (priorE1rm > 0 && est > priorE1rm + EPS_LB) {
         return { type: 'e1rm', e1rmLb: est, weightLb: lb, reps: reps, previousLb: priorE1rm };
       }
-      return null;
+      var prior = today.weightSets.slice();
+      history.forEach(function (h) { prior = prior.concat(h.weightSets); });
+      return weightPr(prior, lb, reps);
     }
     if (priorReps > 0 && reps > priorReps) {
       return { type: 'reps', reps: reps, previous: priorReps };
@@ -186,16 +213,28 @@
         if (s.sets === 0) return;
         var b = best[id];
         if (b && eligible) {
+          var wpr = null;
+          if (!(s.topE1rm > 0 && b.e1rm > 0 && s.topE1rm > b.e1rm + EPS_LB) && b.sets.length) {
+            // The session's best weight PR: heaviest first, else the heaviest set that beat its rep record.
+            s.weightSets.forEach(function (x) {
+              var pr = weightPr(b.sets, x[0], x[1]);
+              if (pr && (!wpr || (pr.type === 'weight') > (wpr.type === 'weight') || (pr.type === wpr.type && (x[0] > wpr.weightLb + EPS_LB || (Math.abs(x[0] - wpr.weightLb) <= EPS_LB && x[1] > wpr.reps))))) wpr = pr;
+            });
+          }
           if (s.topE1rm > 0 && b.e1rm > 0 && s.topE1rm > b.e1rm + EPS_LB) {
             events.push({ workoutId: w.id, date: w.startedAt, exerciseId: id, type: 'e1rm',
               e1rmLb: s.topE1rm, weightLb: s.bestE1rmSet.weightLb, reps: s.bestE1rmSet.reps });
+          } else if (wpr) {
+            events.push({ workoutId: w.id, date: w.startedAt, exerciseId: id, type: wpr.type, weightLb: wpr.weightLb, reps: wpr.reps,
+              previousLb: wpr.previousLb, previous: wpr.previous });
           } else if (s.topE1rm === 0 && s.maxBwReps > 0 && b.reps > 0 && s.maxBwReps > b.reps) {
             events.push({ workoutId: w.id, date: w.startedAt, exerciseId: id, type: 'reps', reps: s.maxBwReps });
           } else if (s.maxSeconds > 0 && b.seconds > 0 && s.maxSeconds > b.seconds) {
             events.push({ workoutId: w.id, date: w.startedAt, exerciseId: id, type: 'seconds', seconds: s.maxSeconds });
           }
         }
-        if (!b) b = best[id] = { e1rm: 0, reps: 0, seconds: 0 };
+        if (!b) b = best[id] = { e1rm: 0, reps: 0, seconds: 0, sets: [] };
+        b.sets = b.sets.concat(s.weightSets);
         b.e1rm = Math.max(b.e1rm, s.topE1rm);
         b.reps = Math.max(b.reps, s.maxBwReps);
         b.seconds = Math.max(b.seconds, s.maxSeconds);
@@ -320,6 +359,48 @@
     return Object.keys(by).map(function (k) { return by[k]; }).sort(function (a, b) {
       return b.thisWeek - a.thisWeek || b.lastWeek - a.lastWeek || (a.muscle < b.muscle ? -1 : 1);
     });
+  }
+
+  /**
+   * What changed against last time, per exercise in this workout (in workout order). Facts only:
+   * { exerciseId, kind, now, before, delta } where kind is
+   *   'first' (no earlier session), 'heavier' / 'lighter' (top set's weight, delta in lb),
+   *   'moreReps' / 'fewerReps' / 'same' (same top weight, delta in reps),
+   *   'seconds' (longest hold, delta in s), 'assist' (least help, delta in lb; negative = less help),
+   *   'reps' (body weight, most reps, delta), or 'other' (logged differently from last time).
+   * now/before are the compared sets: { lb, reps } or { seconds } or { reps }.
+   */
+  function sessionChanges(workouts, workout) {
+    var ids = [];
+    (workout.exercises || []).forEach(function (e) { if (ids.indexOf(e.exerciseId) === -1) ids.push(e.exerciseId); });
+    var out = [];
+    ids.forEach(function (id) {
+      var now = summarise(workout, id);
+      if (!now.sets) return;
+      var earlier = sessionsFor(workouts, id, workout.id).filter(function (x) { return x.date < workout.startedAt; });
+      var prev = earlier[earlier.length - 1];
+      var r = { exerciseId: id, kind: 'first' };
+      if (prev) {
+        if (now.topWeightLb > 0 && prev.topWeightLb > 0) {
+          var dl = now.topWeightLb - prev.topWeightLb, dr = now.topWeightReps - prev.topWeightReps;
+          r.now = { lb: now.topWeightLb, reps: now.topWeightReps }; r.before = { lb: prev.topWeightLb, reps: prev.topWeightReps };
+          if (dl > EPS_LB) { r.kind = 'heavier'; r.delta = dl; }
+          else if (dl < -EPS_LB) { r.kind = 'lighter'; r.delta = dl; }
+          else { r.kind = dr > 0 ? 'moreReps' : dr < 0 ? 'fewerReps' : 'same'; r.delta = dr; }
+        } else if (now.maxSeconds > 0 && prev.maxSeconds > 0) {
+          r.kind = 'seconds'; r.delta = now.maxSeconds - prev.maxSeconds; r.now = { seconds: now.maxSeconds }; r.before = { seconds: prev.maxSeconds };
+        } else if (now.leastAssistLb !== null && prev.leastAssistLb !== null) {
+          r.kind = 'assist'; r.delta = now.leastAssistLb - prev.leastAssistLb;
+          r.now = { lb: now.leastAssistLb, reps: now.assistReps }; r.before = { lb: prev.leastAssistLb, reps: prev.assistReps };
+        } else if (now.maxBwReps > 0 && prev.maxBwReps > 0) {
+          r.kind = 'reps'; r.delta = now.maxBwReps - prev.maxBwReps; r.now = { reps: now.maxBwReps }; r.before = { reps: prev.maxBwReps };
+        } else {
+          r.kind = 'other';
+        }
+      }
+      out.push(r);
+    });
+    return out;
   }
 
   /** Muscles grouped the way most splits are: push, pull, legs, then everything else. */
@@ -638,7 +719,7 @@
     workoutFrequency: workoutFrequency,
     lastSessionFor: lastSessionFor,
     hintFor: hintFor,
-    hintForSet: hintForSet, setsByMuscle: setsByMuscle, trainingSplit: trainingSplit, MUSCLE_GROUPS: MUSCLE_GROUPS, daysSince: daysSince, progressionFor: progressionFor,
+    hintForSet: hintForSet, setsByMuscle: setsByMuscle, trainingSplit: trainingSplit, sessionChanges: sessionChanges, repsAtOrAbove: repsAtOrAbove, MUSCLE_GROUPS: MUSCLE_GROUPS, daysSince: daysSince, progressionFor: progressionFor,
     strengthTotal: strengthTotal,
     E1RM_MAX_REPS: E1RM_MAX_REPS,
     suggestNext: suggestNext

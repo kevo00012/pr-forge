@@ -13,7 +13,7 @@
   // Supabase server, then hands Google's ID token to Supabase (signInWithIdToken). The "PR Forge web" OAuth client ID
   // is public (it's in the sign-in address). Empty = the older Supabase redirect sign-in, which still works and stays
   // available as a fallback on the sign-in screen. Needs this site's address in the client's Authorized redirect URIs.
-  var GOOGLE_CLIENT_ID = '';
+  var GOOGLE_CLIENT_ID = '712903533305-blbn3n7itthkfsfrrash2egch2r7q5a8.apps.googleusercontent.com';
 
   var ST = root.PRF.store, SY = root.PRF.sync;
   var META_KEY = ST.KEY + ':sync';

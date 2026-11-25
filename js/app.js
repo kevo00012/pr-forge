@@ -7,7 +7,7 @@
 
   var CUES = (PRF.cues && PRF.cues.CUES) || {};
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '2.8.0';
+  var VERSION = '2.8.1';
 
   var S = ST.load();
   var V = {
@@ -189,6 +189,7 @@
     pause: '<path d="M9 6.5v11M15 6.5v11"/>',
     bars: '<path d="M6 18.5v-4M12 18.5v-9M18 18.5v-13"/>',
     fall: '<path d="M4 6.5l6 6 3.5-3.5L20 15.5M20 10.5v5h-5"/>',
+    hash: '<path d="M9.5 4 8 20M16 4l-1.5 16M4.5 9h16M3.5 15h16"/>',
     trophy: '<path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8.5 20h7M10 17h4"/>'
   };
   function icon(name, cls) {
@@ -370,9 +371,16 @@
     return new Promise(function (resolve) {
       V.modal = { resolve: resolve, choices: choices };
       openModal('<h2>' + esc(title) + '</h2>' + (text ? '<p class="muted">' + text + '</p>' : '') +
-        '<div class="modal-choices">' + choices.map(function (c, i) {
-          return '<button class="btn block ' + (c.cls || 'ghost') + '" data-act="modal-choice" data-i="' + i + '">' + esc(c.label) + '</button>';
-        }).join('') + '<button class="btn ghost block" data-act="modal-cancel">Cancel</button></div>');
+        (choices.every(function (c) { return c.icon; })
+          // A list of rows (icon, label, one-line description), like Settings; c.gap starts a new group.
+          ? '<div class="choice-list">' + choices.map(function (c, i) {
+              return (c.gap ? '</div><div class="choice-list">' : '') +
+                '<button class="set-row-btn" data-act="modal-choice" data-i="' + i + '"><span class="set-ic">' + icon(c.icon) + '</span>' +
+                '<span class="set-txt"><strong>' + esc(c.label) + '</strong>' + (c.sub ? '<span>' + esc(c.sub) + '</span>' : '') + '</span>' + icon('next', 'sm chev') + '</button>';
+            }).join('') + '</div><button class="btn ghost block" data-act="modal-cancel">Cancel</button>'
+          : '<div class="modal-choices">' + choices.map(function (c, i) {
+              return '<button class="btn block ' + (c.cls || 'ghost') + '" data-act="modal-choice" data-i="' + i + '">' + esc(c.label) + '</button>';
+            }).join('') + '<button class="btn ghost block" data-act="modal-cancel">Cancel</button></div>'));
     });
   }
 
@@ -2735,11 +2743,11 @@
     },
     'routine-new': function () {
       choiceBox('New routine', '', [
-        { label: 'Build from scratch', value: 'scratch', cls: 'primary' },
-        { label: 'Paste or import a plan (text, PDF, CSV)', value: 'paste' },
-        { label: 'Use a starter plan (Push/Pull/Legs and more)', value: 'starter' },
-        { label: 'Enter a share code from a friend', value: 'code' },
-        { label: 'Start an empty workout instead', value: 'empty' }
+        { label: 'Build from scratch', sub: 'Pick exercises and sets', value: 'scratch', icon: 'plus' },
+        { label: 'Use a starter plan', sub: 'Push/Pull/Legs and more', value: 'starter', icon: 'layers' },
+        { label: 'Paste or import a plan', sub: 'Text, PDF or CSV', value: 'paste', icon: 'file' },
+        { label: 'Enter a share code', sub: 'A routine from a friend', value: 'code', icon: 'hash' },
+        { label: 'Start an empty workout', sub: 'Log now, no routine', value: 'empty', icon: 'workouts', gap: true }
       ]).then(function (v) {
         if (v === 'starter') { pickStarter(); return; }
         if (v === 'code') { shareCodeForm(); return; }

@@ -5,8 +5,9 @@
 (function () {
   'use strict';
 
+  var CUES = (PRF.cues && PRF.cues.CUES) || {};
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '2.7.0';
+  var VERSION = '2.8.0';
 
   var S = ST.load();
   var V = {
@@ -65,6 +66,13 @@
     { v: 'arm', label: 'One arm at a time', hint: 'Reps counted per arm, like concentration curls. Shows "Per arm".' },
     { v: 'leg', label: 'One leg at a time', hint: 'Reps counted per leg, like split squats. Shows "Per leg".' }
   ];
+  /** Short form cues for the common lifts: plain reminders, not coaching. */
+  function cuesHtml(id) {
+    var list = CUES[id];
+    if (!list) return '';
+    return '<ul class="cues">' + list.map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('') + '</ul>' +
+      '<p class="muted small">General reminders, not coaching. Use a weight you can control, and stop if something hurts.</p>';
+  }
   /** A note that stays with an exercise and shows every time it's logged ("seat 4, wide grip"). */
   function exerciseNoteModal(id) {
     var cur = (S.settings.exerciseNotes || {})[id] || '';
@@ -263,15 +271,16 @@
 
   // ---------- plate calculator ----------
   function barFor(u) { return u === 'kg' ? S.settings.barKg : S.settings.barLb; }
+  function myPlates(u) { return P.platesFor(u, u === 'kg' ? S.settings.platesKg : S.settings.platesLb); }
   function plateChips(list) {
     var sizes = list.filter(function (p, i) { return list.indexOf(p) === i; });
     return '<span class="plate-chips">' + list.map(function (p) {
-      return '<span class="plate-chip p' + Math.min(sizes.indexOf(p), 2) + '">' + U.fmtNum(p) + '</span>';
+      return '<span class="plate-chip p' + Math.min(sizes.indexOf(p), 2) + '">' + String(p) + '</span>';
     }).join('') + '</span>';
   }
   function platesInner(weight, u) {
     var bar = barFor(u);
-    var plan = P.calculate(weight, bar, P.PLATES[u]);
+    var plan = P.calculate(weight, bar, myPlates(u));
     if (!plan) return '';
     if (plan.lessThanBar) return '<span>Less than the ' + U.fmtNum(bar) + ' ' + u + ' bar</span>';
     if (plan.exact) {
@@ -601,6 +610,32 @@
     return '<div class="stat"><span class="stat-v' + (cls ? ' ' + cls : '') + '">' + value + '</span><span class="stat-l">' + label + '</span></div>';
   }
 
+  // ----- Share codes (2.8.0) -----
+  function shareMenu(t) {
+    choiceBox('Share “' + t.name + '”', 'A code is easiest: your friend types it in PR Forge (works for 30 days). Text works in any message, even without the code server.', [
+      { label: 'Get a share code', value: 'code', cls: 'primary' }, { label: 'Share as text', value: 'text' }]).then(function (v) {
+      if (v === 'text') actions['template-share']({ dataset: { id: t.id } });
+      else if (v === 'code') {
+        if (!navigator.onLine) { toast('No connection. Share codes need the internet; “Share as text” works offline.', 'warn', 4000); return; }
+        toast('Making a code…', '', 1500);
+        CLOUD.shareRoutine(IM.routineToShare(t, exById)).then(function (code) { shareCodeResult(t, code); },
+          function (e) { toast(esc(e.message), 'warn', 4500); });
+      }
+    });
+  }
+  function shareCodeResult(t, code) {
+    V.modal = { resolve: null, shareCode: code, shareName: t.name };
+    openModal('<h2>Share code</h2><p class="share-code" aria-label="Code ' + code.split('').join(' ') + '">' + esc(code) + '</p>' +
+      '<p class="muted small">Your friend opens PR Forge → Routines → New → <b>Enter a share code from a friend</b>. The code works for 30 days.</p>' +
+      '<div class="modal-actions"><button class="btn ghost" data-act="share-code-copy">Copy</button><button class="btn primary" data-act="share-code-send">Send</button></div>' +
+      '<button class="btn ghost block" data-act="modal-cancel">Done</button>');
+  }
+  function shareCodeForm() {
+    V.modal = { resolve: null };
+    openModal('<h2>Enter a share code</h2><label class="field"><span>6 letters and numbers, from a friend</span>' +
+      '<input id="share-code-in" class="share-code-in" maxlength="7" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="K7P2QX"></label>' +
+      '<div class="modal-actions"><button class="btn ghost" data-act="modal-cancel">Cancel</button><button class="btn primary" data-act="share-code-find">Find</button></div>');
+  }
   /** Starter plans: pick one and its routines are added as ordinary routines you can change. */
   function pickStarter() {
     choiceBox('Starter plans', 'Starting points with sets and rep targets. They become normal routines: change, rename or delete anything.',
@@ -708,7 +743,7 @@
           html += '<div class="plates" data-plates aria-live="polite">' + platesInner(plannedWeight, a.unit) + '</div>';
           // Before the first working set, with no warm-ups yet: suggest a ramp from the bar.
           var started = entry.sets.some(function (x) { return x.done || x.warmup; });
-          var plan = !started && !s.warmup ? P.warmupPlan(plannedWeight, barFor(a.unit), a.unit) : [];
+          var plan = !started && !s.warmup ? P.warmupPlan(plannedWeight, barFor(a.unit), a.unit, myPlates(a.unit)) : [];
           if (plan.length > 1) {
             html += '<div class="warm-plan"><span class="muted small">Warm-up: ' + plan.map(function (x) { return U.fmtNum(x.weight) + '×' + x.reps; }).join(' · ') + '</span>' +
               '<button class="btn ghost sm" data-act="warmup-plan" data-e="' + entry.id + '" data-w="' + plannedWeight + '">Add warm-ups</button></div>';
@@ -1126,7 +1161,12 @@
           '<div class="seg"><button class="' + (S.settings.rpe ? '' : 'on') + '" data-act="set-rpe" data-v="0" aria-pressed="' + !S.settings.rpe + '">Off</button><button class="' + (S.settings.rpe ? 'on' : '') + '" data-act="set-rpe" data-v="1" aria-pressed="' + !!S.settings.rpe + '">On</button></div></div>' +
         '<div class="setting"><span class="set-label">Rest-over sound<small>A short tone when rest ends, while the app is open</small></span>' +
           '<div class="seg"><button class="' + (S.settings.restSound === false ? 'on' : '') + '" data-act="set-rest-sound" data-v="0" aria-pressed="' + (S.settings.restSound === false) + '">Off</button><button class="' + (S.settings.restSound === false ? '' : 'on') + '" data-act="set-rest-sound" data-v="1" aria-pressed="' + (S.settings.restSound !== false) + '">On</button></div></div>' +
-        '<label class="setting"><span>Bar weight (' + unit() + ')</span><input class="bar-input" data-field="bar" inputmode="decimal" autocomplete="off" value="' + U.fmtNum(barFor(unit())) + '"></label></section>';
+        '<label class="setting"><span>Bar weight (' + unit() + ')</span><input class="bar-input" data-field="bar" inputmode="decimal" autocomplete="off" value="' + U.fmtNum(barFor(unit())) + '"></label>' +
+        '<div class="setting col"><span class="set-label">Plates in your gym (' + unit() + ')<small>The plate calculator and warm-ups only use these</small></span><div class="chips">' +
+          P.PLATE_OPTIONS[unit()].map(function (pl) {
+            var on = myPlates(unit()).indexOf(pl) !== -1;
+            return '<button class="chip' + (on ? ' on' : '') + '" data-act="toggle-plate" data-v="' + pl + '" aria-pressed="' + on + '">' + String(pl) + '</button>';
+          }).join('') + '</div></div></section>';
     } else if (page === 'import') {
       body = '<section class="card"><h2 class="card-title">Past workouts</h2><p class="muted small">Choose the CSV file exported from <b>Strong</b>, <b>Hevy</b> or <b>Fitbod</b>; PR Forge works out which. Imported workouts never count as PRs, but later sessions have to beat them.</p>' +
         '<details class="how"><summary>Where to find the export</summary><p class="muted small"><b>Strong:</b> Profile → Settings → Export Strong Data. <b>Hevy:</b> Profile → Settings → Export &amp; Import Data → Export Workouts. <b>Fitbod:</b> Settings → Export Workout Data. Menu names change between versions.</p></details>' +
@@ -1314,7 +1354,8 @@
   function liftManageHtml(ex) {
     var kind = exKind(ex.id);
     var label = (EX.TRACKING.filter(function (t) { return t.id === kind; })[0] || {}).label || kind;
-    return pinButton(ex) + '<section class="card"><h2 class="card-title">Settings</h2>' +
+    return (CUES[ex.id] ? '<section class="card"><h2 class="card-title">Form cues</h2>' + cuesHtml(ex.id) + '</section>' : '') +
+      pinButton(ex) + '<section class="card"><h2 class="card-title">Settings</h2>' +
       '<div class="setting"><span>Logged as<br><span class="muted small">' + esc(label) + '. Applies the next time you add it.</span></span>' +
       '<button class="btn ghost sm" data-act="ex-default-type" data-id="' + esc(ex.id) + '">Change</button></div>' +
       '<div class="setting"><span>Note<br><span class="muted small">' + esc((S.settings.exerciseNotes || {})[ex.id] || 'None. Shows on the exercise while you log it.') + '</span></span>' +
@@ -2270,7 +2311,7 @@
     },
     'warmup-plan': function (el) {
       var entry = findEntry(el.dataset.e); if (!entry) return;
-      var plan = P.warmupPlan(Number(el.dataset.w), barFor(S.active.unit), S.active.unit);
+      var plan = P.warmupPlan(Number(el.dataset.w), barFor(S.active.unit), S.active.unit, myPlates(S.active.unit));
       if (!plan.length) return;
       var kind = entryKind(entry);
       var sets = plan.map(function (x) { var st = newSet(kind); st.warmup = true; st.weight = x.weight; st.reps = x.reps; return st; });
@@ -2326,6 +2367,7 @@
       opts.push({ label: 'Logged as: ' + trackingLabel(kind), value: 'ex-type' });
       opts.push({ label: 'Sides: ' + (sideLabel(ex) || 'both together'), value: 'ex-sides' });
       opts.push({ label: (S.settings.exerciseNotes && S.settings.exerciseNotes[entry.exerciseId] ? 'Edit' : 'Add') + ' a note for this exercise', value: 'ex-note' });
+      if (CUES[entry.exerciseId]) opts.unshift({ label: 'Form cues', value: 'ex-cues' });
       if (i > 0) opts.push({ label: 'Move up', value: 'up' });
       if (i < list.length - 1) opts.push({ label: 'Move down', value: 'down' });
       if (entry.sets.length > 1) opts.push({ label: 'Remove last set', value: 'set-remove' });
@@ -2398,7 +2440,7 @@
           commit(); return;
         }
         if (v === 'edit') actions['template-edit'](target);
-        else if (v === 'share') actions['template-share'](target);
+        else if (v === 'share') shareMenu(t);
         else if (v === 'dup') { actions['template-edit'](target); actions['template-dup'](); }
       });
     },
@@ -2567,6 +2609,10 @@
     },
     'ex-sides': function (el) { closeModal(); sidesModal(el.dataset.id); },
     'ex-note': function (el) { closeModal(); exerciseNoteModal(el.dataset.id); },
+    'ex-cues': function (el) {
+      V.modal = { resolve: null };
+      openModal('<h2>' + esc(exById(el.dataset.id).name) + '</h2>' + cuesHtml(el.dataset.id) + '<button class="btn ghost block" data-act="modal-cancel">Close</button>');
+    },
     'ex-note-save': function (el) {
       var t = (document.getElementById('ex-note-text').value || '').trim().slice(0, 200);
       S.settings.exerciseNotes = S.settings.exerciseNotes || {};
@@ -2692,15 +2738,55 @@
         { label: 'Build from scratch', value: 'scratch', cls: 'primary' },
         { label: 'Paste or import a plan (text, PDF, CSV)', value: 'paste' },
         { label: 'Use a starter plan (Push/Pull/Legs and more)', value: 'starter' },
+        { label: 'Enter a share code from a friend', value: 'code' },
         { label: 'Start an empty workout instead', value: 'empty' }
       ]).then(function (v) {
         if (v === 'starter') { pickStarter(); return; }
+        if (v === 'code') { shareCodeForm(); return; }
         if (v === 'scratch') { V.tplDraft = { id: null, name: '', exercises: [] }; V.screen = 'template'; render(); }
         else if (v === 'paste') { V.planFileName = ''; pastePlanForm(V.planText || ''); }
         else if (v === 'empty') startWorkout('Workout', null, []);
       });
     },
     'starter-pick': function () { pickStarter(); },
+    'share-code-copy': function () {
+      var code = V.modal && V.modal.shareCode; if (!code) return;
+      try { navigator.clipboard.writeText(code).then(function () { toast('Copied'); }, function () { toast('Couldn’t copy. Read it out instead.', 'warn'); }); } catch (e) { toast('Couldn’t copy. Read it out instead.', 'warn'); }
+    },
+    'share-code-send': function () {
+      var code = V.modal && V.modal.shareCode; if (!code) return;
+      var text = 'My PR Forge routine “' + V.modal.shareName + '”: code ' + code + '. In PR Forge: Routines → New → Enter a share code. (Free lifting log: https://kevo00012.github.io/pr-forge/)';
+      if (navigator.share) navigator.share({ text: text }).catch(function () { /* cancelled */ });
+      else { try { navigator.clipboard.writeText(text).then(function () { toast('Copied. Paste it into a message.'); }); } catch (e) { /* ignore */ } }
+    },
+    'share-code-find': function () {
+      var code = IM.cleanShareCode((document.getElementById('share-code-in') || {}).value);
+      if (code.length !== 6) { toast('Codes are 6 letters and numbers', 'warn'); return; }
+      if (!navigator.onLine) { toast('No connection. Share codes need the internet.', 'warn'); return; }
+      CLOUD.getShared(code).then(function (data) {
+        if (!data) { toast('No routine with that code. Codes last 30 days; check the letters.', 'warn', 4000); return; }
+        var got;
+        try { got = IM.routineFromShare(data, allExercises(), uid); } catch (e) { toast(esc(e.message), 'warn'); return; }
+        closeModal();
+        V.pendingShare = got;
+        V.modal = { resolve: null };
+        openModal('<h2>' + esc(got.template.name) + '</h2><p class="muted small">' + got.template.exercises.length + ' exercises · ' +
+          got.template.exercises.reduce(function (n, e) { return n + e.sets; }, 0) + ' sets' + (got.customs.length ? ' · ' + got.customs.length + ' new custom exercise' + (got.customs.length === 1 ? '' : 's') : '') + '</p>' +
+          '<ol class="share-list">' + got.template.exercises.map(function (e) {
+            var c = got.customs.filter(function (x) { return x.id === e.exerciseId; })[0];
+            return '<li>' + esc(c ? c.name : exById(e.exerciseId).name) + ' <span class="muted small">' + e.sets + (e.reps ? ' × ' + IM.repTargetText(e.reps) : ' sets') + '</span></li>';
+          }).join('') + '</ol>' +
+          '<div class="modal-actions"><button class="btn ghost" data-act="modal-cancel">Cancel</button><button class="btn primary" data-act="share-code-add">Add routine</button></div>');
+      }, function (e) { toast(esc(e.message), 'warn', 4500); });
+    },
+    'share-code-add': function () {
+      var got = V.pendingShare; if (!got) return;
+      S.customExercises = S.customExercises.concat(got.customs);
+      S.templates.push(got.template);
+      V.pendingShare = null;
+      closeModal(); V.tab = 'workouts'; V.screen = null; commit();
+      toast('Added “' + esc(got.template.name) + '”');
+    },
     'plan-paste': function () { V.planFileName = ''; pastePlanForm(V.planText || ''); },
     'plan-copy-tip': function () {
       var tip = 'Write it as a plain list, one exercise per line, like "Bench press 4x8". Put the workout name on its own line above.';
@@ -2773,6 +2859,16 @@
     'bw-del': function (el) {
       S.bodyWeights = (S.bodyWeights || []).filter(function (b) { return b.id !== el.dataset.id; });
       commit(); bodyWeightModal();
+    },
+    'toggle-plate': function (el) {
+      var u = unit(), key = u === 'kg' ? 'platesKg' : 'platesLb', v = Number(el.dataset.v);
+      var list = myPlates(u).slice(), at = list.indexOf(v);
+      if (at !== -1) {
+        if (list.length === 1) { toast('Keep at least one plate', 'warn'); return; }
+        list.splice(at, 1);
+      } else list.push(v);
+      S.settings[key] = list.sort(function (a, b) { return b - a; });
+      commit();
     },
     'set-rpe': function (el) { S.settings.rpe = el.dataset.v === '1'; commit(); },
     'set-theme': function (el) { S.settings.theme = el.dataset.v; commit(); },

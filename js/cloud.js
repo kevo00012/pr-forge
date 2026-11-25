@@ -244,6 +244,15 @@
     }, 2000);
   }
 
+  /** A share-code failure in plain words. */
+  function shareError(e) {
+    var m = String((e && (e.message || e.code)) || '');
+    if (e && e.code === 'PGRST202' || /could not find the function|schema cache|404/i.test(m)) return new Error('Share codes aren’t set up on the server yet. Use “Share as text” for now.');
+    if (/too many share codes/i.test(m)) return new Error('You’ve made 50 share codes in the last 30 days. Older ones expire after 30 days.');
+    if (/not signed in|jwt|401/i.test(m)) return new Error('Sign in again to make a share code (Settings → Account).');
+    if (isNetworkError(e) || /fetch|network|load failed/i.test(m)) return new Error('No connection. Share codes need the internet.');
+    return new Error('Sharing didn’t work: ' + m.slice(0, 120));
+  }
   function adoptSession(s) {
     session = s;
     if (!s) return;
@@ -372,6 +381,23 @@
         provider: 'google',
         options: { redirectTo: back }
       }).then(function (res) { if (res.error) throw res.error; });
+    },
+    /** Saves a routine under a new 6-character share code (needs to be signed in and online). Resolves to the code. */
+    shareRoutine: function (payload) {
+      if (!client) return Promise.reject(new Error('Sharing could not load. Check your connection and reload.'));
+      if (!session) return Promise.reject(new Error('Sign in again to make a share code (Settings → Account).'));
+      return client.rpc('prf_share_put', { p_routine: payload }).then(function (res) {
+        if (res.error) throw shareError(res.error);
+        return res.data;
+      }, function (e) { throw shareError(e); });
+    },
+    /** The routine stored under a share code, or null when there's none (unknown, or older than 30 days). */
+    getShared: function (code) {
+      if (!client) return Promise.reject(new Error('Sharing could not load. Check your connection and reload.'));
+      return client.rpc('prf_share_get', { p_code: code }).then(function (res) {
+        if (res.error) throw shareError(res.error);
+        return res.data || null;
+      }, function (e) { throw shareError(e); });
     },
     /** Signs out and removes this phone's copy (the cloud copy stays). */
     signOut: function () {

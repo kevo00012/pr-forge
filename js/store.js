@@ -13,7 +13,7 @@
   function defaults() {
     return {
       schema: SCHEMA,
-      settings: { unit: 'lb', restSeconds: 90, barLb: 45, barKg: 20, exerciseTypes: {}, exerciseSides: {}, exerciseNotes: {}, restSound: true, pinned: [], rpe: false, theme: 'dark', setupDone: false },
+      settings: { unit: 'lb', restSeconds: 90, barLb: 45, barKg: 20, exerciseTypes: {}, exerciseSides: {}, exerciseNotes: {}, restSound: true, platesLb: [], platesKg: [], pinned: [], rpe: false, theme: 'dark', setupDone: false },
       customExercises: [],
       bodyWeights: [],
       templates: [],
@@ -125,6 +125,12 @@
       });
     }
     d.settings.restSound = st.restSound !== false;
+    // The plates your gym has (empty = the standard set). Only sizes the app offers are kept.
+    var keepPlates = function (list, allowed) {
+      return arr(list).map(Number).filter(function (p, i, a) { return allowed.indexOf(p) !== -1 && a.indexOf(p) === i; }).sort(function (x, y) { return y - x; });
+    };
+    d.settings.platesLb = keepPlates(st.platesLb, [55, 45, 35, 25, 15, 10, 5, 2.5, 1.25]);
+    d.settings.platesKg = keepPlates(st.platesKg, [25, 20, 15, 10, 5, 2.5, 2, 1.25, 1, 0.5]);
     // Your choice of "one arm / one leg at a time / both together" for an exercise; a label only, never a number.
     if (isObj(st.exerciseSides)) {
       Object.keys(st.exerciseSides).forEach(function (id) {

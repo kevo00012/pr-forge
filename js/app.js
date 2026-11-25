@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '2.5.0';
+  var VERSION = '2.6.0';
 
   var S = ST.load();
   var V = {
@@ -646,6 +646,13 @@
         if (s === activeSet && showPlates) {
           var plannedWeight = s.weight != null ? s.weight : hint ? hint.weight : null;
           html += '<div class="plates" data-plates aria-live="polite">' + platesInner(plannedWeight, a.unit) + '</div>';
+          // Before the first working set, with no warm-ups yet: suggest a ramp from the bar.
+          var started = entry.sets.some(function (x) { return x.done || x.warmup; });
+          var plan = !started && !s.warmup ? P.warmupPlan(plannedWeight, barFor(a.unit), a.unit) : [];
+          if (plan.length > 1) {
+            html += '<div class="warm-plan"><span class="muted small">Warm-up: ' + plan.map(function (x) { return U.fmtNum(x.weight) + '×' + x.reps; }).join(' · ') + '</span>' +
+              '<button class="btn ghost sm" data-act="warmup-plan" data-e="' + entry.id + '" data-w="' + plannedWeight + '">Add warm-ups</button></div>';
+          }
         }
         return html;
       }).join('');
@@ -1014,7 +1021,7 @@
           row('set-page', 'sun', 'Appearance', themeName, go('appearance')) +
           row('set-page', 'settings', 'Preferences', unit() + ' · ' + restName + ' · RPE ' + (S.settings.rpe ? 'on' : 'off'), go('prefs')) +
           row('exercises-open', 'workouts', 'Exercises', 'How each is logged, your own exercises') +
-          row('set-page', 'upload', 'Import', 'Fitbod history, routines from a plan', go('import')) +
+          row('set-page', 'upload', 'Import', 'Strong, Hevy or Fitbod history; routines from a plan', go('import')) +
           row('set-page', 'info', 'About', 'Version ' + VERSION + ' · privacy', go('about')) +
         '</section>' +
         '<button class="btn danger-ghost block" data-act="erase-all">Erase all my data</button>' + fileInputs();
@@ -1056,8 +1063,9 @@
           '<div class="seg"><button class="' + (S.settings.rpe ? '' : 'on') + '" data-act="set-rpe" data-v="0" aria-pressed="' + !S.settings.rpe + '">Off</button><button class="' + (S.settings.rpe ? 'on' : '') + '" data-act="set-rpe" data-v="1" aria-pressed="' + !!S.settings.rpe + '">On</button></div></div>' +
         '<label class="setting"><span>Bar weight (' + unit() + ')</span><input class="bar-input" data-field="bar" inputmode="decimal" autocomplete="off" value="' + U.fmtNum(barFor(unit())) + '"></label></section>';
     } else if (page === 'import') {
-      body = '<section class="card"><h2 class="card-title">Past workouts from Fitbod</h2><p class="muted small">Choose the CSV file Fitbod exports. Imported workouts never count as PRs, but later sessions have to beat them.</p>' +
-        '<button class="btn ghost block" data-act="fitbod-pick">Choose Fitbod file</button>' + importsHtml() + '</section>' +
+      body = '<section class="card"><h2 class="card-title">Past workouts</h2><p class="muted small">Choose the CSV file exported from <b>Strong</b>, <b>Hevy</b> or <b>Fitbod</b>; PR Forge works out which. Imported workouts never count as PRs, but later sessions have to beat them.</p>' +
+        '<details class="how"><summary>Where to find the export</summary><p class="muted small"><b>Strong:</b> Profile → Settings → Export Strong Data. <b>Hevy:</b> Profile → Settings → Export &amp; Import Data → Export Workouts. <b>Fitbod:</b> Settings → Export Workout Data. Menu names change between versions.</p></details>' +
+        '<button class="btn ghost block" data-act="fitbod-pick">Choose export file</button>' + importsHtml() + '</section>' +
         '<section class="card"><h2 class="card-title">Routines from a plan</h2><p class="muted small">Paste one, or choose a PDF, text or CSV file.</p>' +
         '<button class="btn ghost block" data-act="plan-paste">Paste or import a routine</button></section>';
     } else if (page === 'about') {
@@ -1307,6 +1315,7 @@
       '<h1>' + (busy ? 'Signing you in…' : 'Sign in') + '</h1>' +
       (busy ? '<p class="lede">Hang on a second.</p>' :
         '<p class="lede">Your workouts are kept on this phone and backed up to your own account, so they come back if you change phones. Only you can see them.</p>' +
+        '<p class="small free-line">Free: no ads, no subscriptions, no limits. Works without signal.</p>' +
         (hasData ? '<p class="small">The workouts already on this phone will be backed up when you sign in.</p>' : '') +
         (CLOUD.waitingForSignIn() && !err ? '<p class="small">Signed in with Google already? Tap Done in that window to come back; this screen updates by itself in a few seconds.</p>' : '') +
         (err ? '<p class="small warn-text">' + esc(err) + '</p>' : '') +
@@ -1388,7 +1397,8 @@
       '<p class="lede">A simple lifting log. Faded numbers show last session, and one tap confirms a set.</p></header>' +
       '<section class="card"><h2 class="card-title">Good to know</h2><ul class="ideas">' +
       '<li><strong>Backed up to your account.</strong> Only you can see your workouts, and signing in on a new phone brings them back.</li>' +
-      '<li><strong>Works without signal.</strong> Log as normal; changes back up when you’re online again.</li></ul></section>' +
+      '<li><strong>Works without signal.</strong> Log as normal; changes back up when you’re online again.</li>' +
+      '<li><strong>Free, with no limits.</strong> No ads, no subscriptions; every feature is included.</li></ul></section>' +
       (standalone ? '' : '<section class="card"><h2 class="card-title">Put it on your home screen</h2>' +
         '<p class="small">On iPhone, open this page in Safari, tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>. Always open it from that icon: its workouts are kept separately from the Safari tab, and are less likely to be cleared.</p></section>') +
       '<section class="card"><h2 class="card-title">Your setup</h2>' +
@@ -1396,7 +1406,7 @@
       '<button class="' + (unit() === 'kg' ? 'on' : '') + '" data-act="set-unit" data-v="kg" aria-pressed="' + (unit() === 'kg') + '">kg</button></div></div>' +
       '<div class="setting col"><span>Rest timer after each set</span><div class="chips">' + restChips + '</div></div></section>' +
       '<div class="foot-actions"><button class="btn primary block" data-act="setup-done">Get started</button>' +
-      '<button class="btn ghost block" data-act="fitbod-pick">Import past workouts from Fitbod</button></div>' +
+      '<button class="btn ghost block" data-act="fitbod-pick">Import past workouts (Strong, Hevy or Fitbod)</button></div>' +
       fileInputs();
   }
 
@@ -1961,38 +1971,52 @@
     reader.readAsText(file);
   }
 
-  function importFitbod(file) {
+  /** Imports a Strong, Hevy or Fitbod history CSV. Duplicates, replace and undo work the same for all three. */
+  function importHistory(file) {
     var reader = new FileReader();
     reader.onload = function () {
-      var batchId = 'fb-' + uid();
-      var existing = {};
-      S.workouts.forEach(function (x) { if (x.sourceKey) existing[x.sourceKey] = true; });
-      var opts = { exercises: allExercises(), targetUnit: unit(), uid: uid, batchId: batchId };
-      var fresh, all;
-      try {
-        fresh = IM.parseFitbod(String(reader.result), Object.assign({ existingKeys: existing }, opts)); // days not imported yet
-        all = IM.parseFitbod(String(reader.result), opts);                                             // every day in the file
-      } catch (e) { toast(esc(e.message), 'warn', 4000); return; }
-      var dup = fresh.stats.duplicateDays;
-      if (!all.stats.workouts) { toast('No workouts found in that file', 'warn', 3500); return; }
-      if (!dup) {
-        confirmBox('Import from Fitbod?', importSummary(fresh) + '<br>Weights are shown in ' + unit() + '. You can undo this in Settings.', 'Import')
-          .then(function (ok) { if (ok) applyImport(fresh, batchId, false); });
-        return;
-      }
-      // Some days are already here: let the person add only the new ones, or replace those days with this file's version.
-      var n = fresh.stats.workouts;
-      var text = 'This file has <b>' + all.stats.workouts + ' workout' + (all.stats.workouts === 1 ? '' : 's') + '</b>. ' +
-        dup + ' of those day' + (dup === 1 ? ' is' : 's are') + ' already imported' + (n ? ', and ' + n + ' ' + (n === 1 ? 'is' : 'are') + ' new.' : ', and none are new.') +
-        '<br><b>Replace</b> swaps the imported copies of those days for this file’s version (any edits you made to them are lost). ' +
-        'Workouts you logged in PR Forge are never touched.<br>Weights are shown in ' + unit() + '. You can undo this in Settings.';
-      var choices = [];
-      if (n) choices.push({ label: 'Add the ' + n + ' new day' + (n === 1 ? '' : 's'), value: 'new', cls: 'primary' });
-      choices.push({ label: n ? 'Replace ' + dup + ' and add ' + n : 'Replace the ' + dup + ' imported day' + (dup === 1 ? '' : 's'), value: 'replace', cls: n ? 'ghost' : 'primary' });
-      choiceBox('Import from Fitbod?', text, choices).then(function (v) {
-        if (v === 'new') applyImport(fresh, batchId, false);
-        else if (v === 'replace') applyImport(all, batchId, true);
-      });
+      var text = String(reader.result);
+      var det = IM.detectHistory(text);
+      if (!det) { toast('Couldn’t tell which app this file came from. PR Forge reads the workout CSV exported by Strong, Hevy or Fitbod.', 'warn', 5000); return; }
+      var label = { fitbod: 'Fitbod', strong: 'Strong', hevy: 'Hevy' }[det.source];
+      var go = function (sourceUnit) {
+        var batchId = (det.source === 'fitbod' ? 'fb-' : det.source + '-') + uid();
+        var existing = {};
+        S.workouts.forEach(function (x) { if (x.sourceKey) existing[x.sourceKey] = true; });
+        var opts = { exercises: allExercises(), targetUnit: unit(), uid: uid, batchId: batchId, source: det.source, sep: det.sep, sourceUnit: sourceUnit };
+        var parse = function (o) { return det.source === 'fitbod' ? IM.parseFitbod(text, o) : IM.parseHistory(text, o); };
+        var fresh, all;
+        try {
+          fresh = parse(Object.assign({ existingKeys: existing }, opts)); // workouts not imported yet
+          all = parse(opts);                                             // every workout in the file
+        } catch (e) { toast(esc(e.message), 'warn', 4000); return; }
+        var dup = fresh.stats.duplicateDays;
+        var what = det.source === 'fitbod' ? 'day' : 'workout';
+        if (!all.stats.workouts) { toast('No workouts found in that file', 'warn', 3500); return; }
+        var note = '<br>Weights are shown in ' + unit() + (sourceUnit && sourceUnit !== unit() ? ' (converted from ' + sourceUnit + ')' : '') + '. You can undo this in Settings → Import.';
+        if (!dup) {
+          confirmBox('Import from ' + label + '?', importSummary(fresh) + note, 'Import')
+            .then(function (ok) { if (ok) applyImport(fresh, batchId, false, label); });
+          return;
+        }
+        // Some are already here: add only the new ones, or replace those with this file's version.
+        var n = fresh.stats.workouts;
+        var text2 = 'This file has <b>' + all.stats.workouts + ' workout' + (all.stats.workouts === 1 ? '' : 's') + '</b>. ' +
+          dup + ' of those ' + what + (dup === 1 ? ' is' : 's are') + ' already imported' + (n ? ', and ' + n + ' ' + (n === 1 ? 'is' : 'are') + ' new.' : ', and none are new.') +
+          '<br><b>Replace</b> swaps the imported copies for this file’s version (any edits you made to them are lost). ' +
+          'Workouts you logged in PR Forge are never touched.' + note;
+        var choices = [];
+        if (n) choices.push({ label: 'Add the ' + n + ' new ' + what + (n === 1 ? '' : 's'), value: 'new', cls: 'primary' });
+        choices.push({ label: n ? 'Replace ' + dup + ' and add ' + n : 'Replace the ' + dup + ' imported ' + what + (dup === 1 ? '' : 's'), value: 'replace', cls: n ? 'ghost' : 'primary' });
+        choiceBox('Import from ' + label + '?', text2, choices).then(function (v) {
+          if (v === 'new') applyImport(fresh, batchId, false, label);
+          else if (v === 'replace') applyImport(all, batchId, true, label);
+        });
+      };
+      if (det.needsUnit) {
+        choiceBox('Pounds or kilograms?', label + '’s export doesn’t say which unit its weights are in. Which did you use in ' + label + '?',
+          [{ label: 'Pounds (lb)', value: 'lb' }, { label: 'Kilograms (kg)', value: 'kg' }]).then(function (u) { if (u) go(u); });
+      } else go(null);
     };
     reader.onerror = function () { toast('Couldn’t read that file', 'warn'); };
     reader.readAsText(file);
@@ -2097,7 +2121,7 @@
       (st.skipped ? '<br>' + st.skipped + ' row' + (st.skipped === 1 ? '' : 's') + ' skipped (no reps or time, such as distance-only cardio).' : '');
   }
   /** Adds an import. With replace, imported workouts for the same days are removed first (logged workouts never are). */
-  function applyImport(result, batchId, replace) {
+  function applyImport(result, batchId, replace, source) {
     var st = result.stats;
     var before = { workouts: S.workouts, customs: S.customExercises, imports: S.imports, setup: S.settings.setupDone };
     var replaced = 0;
@@ -2110,7 +2134,7 @@
     }
     S.workouts = keep.concat(result.workouts);
     S.customExercises = S.customExercises.concat(result.customs);
-    S.imports = S.imports.concat([{ id: batchId, source: 'Fitbod', at: new Date().toISOString(), workouts: st.workouts }]);
+    S.imports = S.imports.concat([{ id: batchId, source: source || 'Fitbod', at: new Date().toISOString(), workouts: st.workouts }]);
     if (replace) tidyImports();
     S.settings.setupDone = true;
     if (!ST.save(S)) {
@@ -2173,6 +2197,17 @@
     'set-warmup': function (el) {
       var entry = findEntry(el.dataset.e); var set = entry && findSet(entry, el.dataset.s);
       if (set) { set.warmup = !set.warmup; commit(); }
+    },
+    'warmup-plan': function (el) {
+      var entry = findEntry(el.dataset.e); if (!entry) return;
+      var plan = P.warmupPlan(Number(el.dataset.w), barFor(S.active.unit), S.active.unit);
+      if (!plan.length) return;
+      var kind = entryKind(entry);
+      var sets = plan.map(function (x) { var st = newSet(kind); st.warmup = true; st.weight = x.weight; st.reps = x.reps; return st; });
+      entry.sets = sets.concat(entry.sets);
+      V.focusEntry = entry.id;
+      commit();
+      toast('Added ' + sets.length + ' warm-up sets. Tap ✓ on each as you go.', '', 3000);
     },
     'warmup-add': function (el) {
       var entry = findEntry(el.dataset.e); if (!entry) return;
@@ -2723,7 +2758,7 @@
   document.addEventListener('change', function (ev) {
     var el = ev.target;
     if (el.id === 'import-file' && el.files && el.files[0]) importBackup(el.files[0]);
-    if (el.id === 'fitbod-file' && el.files && el.files[0]) importFitbod(el.files[0]);
+    if (el.id === 'fitbod-file' && el.files && el.files[0]) importHistory(el.files[0]);
     if (el.id === 'plan-file' && el.files && el.files[0]) loadPlanFile(el.files[0]);
   });
   document.addEventListener('keydown', function (ev) {

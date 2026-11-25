@@ -712,3 +712,8 @@ a.btn { color: var(--text); text-decoration: none; }
 .chg-text.up { color: var(--accent-ink); font-weight: 600; }
 .chg-sets { grid-area: sets; font-family: var(--cond); font-weight: 700; font-size: var(--fs-2xl); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .chg-sets small { display: block; font-family: var(--body); font-weight: 400; font-size: var(--fs-xs); color: var(--muted); }
+
+/* Warm-up plan under the plate calculator (2.6.0) */
+.warm-plan { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; padding: var(--space-1) 0 var(--space-3); }
+.warm-plan .muted { font-variant-numeric: tabular-nums; }
+.free-line { color: var(--soft); font-weight: 600; }

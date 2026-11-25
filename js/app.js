@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '2.0.1';
+  var VERSION = '2.2.0';
 
   var S = ST.load();
   var V = {
@@ -80,6 +80,7 @@
     if (v === null || v === undefined) return null;
     var t = String(v).replace(',', '.').trim();
     if (t === '') return null;
+    if (!/^\d*\.?\d*$/.test(t)) return null; // plain numbers only: no "1e5", no hex
     var n = Number(t);
     return isFinite(n) && n >= 0 ? n : null;
   }
@@ -379,8 +380,23 @@
     }
   }
   if (themeQuery && themeQuery.addEventListener) themeQuery.addEventListener('change', function () { if (S.settings.theme === 'system') applyTheme(); });
+  // The rest timer is kept on the phone too, so it survives the app being closed and reopened mid-rest.
+  var REST_KEY = 'pr-forge:web:v1:rest', restSaved = null;
+  function keepRest() {
+    var v = V.rest && S.active ? JSON.stringify({ w: S.active.id, e: V.rest.endsAt, t: V.rest.total }) : '';
+    if (v === restSaved) return;
+    restSaved = v;
+    try { if (v) localStorage.setItem(REST_KEY, v); else localStorage.removeItem(REST_KEY); } catch (e) { /* private mode: timer just won't survive a restart */ }
+  }
+  function restoreRest() {
+    try {
+      var r = JSON.parse(localStorage.getItem(REST_KEY) || 'null');
+      if (r && S.active && r.w === S.active.id && r.e > Date.now()) V.rest = { endsAt: r.e, total: r.t };
+    } catch (e) { /* ignore */ }
+  }
   function render() {
     applyTheme();
+    keepRest();
     var body;
     var g = gate();
     if (g) body = g === 'greet' ? viewGreet() : g === 'handedoff' ? viewHandedOff() : viewSignIn();
@@ -499,9 +515,9 @@
       stat(prLabel, String(sum.prs.length)) +
       '</section>';
 
-    return '<header class="top row end"><div class="top"><p class="eyebrow">' + now.toLocaleDateString('en-US', { weekday: 'long' }) + ' · ' + now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + '</p><h1>Today</h1></div>' +
+    return '<header class="top row end"><div class="top"><p class="eyebrow">' + now.toLocaleDateString('en-US', { weekday: 'short' }) + ' · ' + now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + '</p><h1>Today</h1></div>' +
       '<div class="top-tools"><img class="wordmark-img" src="icons/wordmark.png" width="136" height="16" alt="PR Forge">' + settingsButton() + '</div></header>' +
-      '<section class="week-wrap" aria-label="This week"><div class="week">' + strip + '</div><p class="week-line">' + weekLine + '</p></section>' +
+      '<section class="week-wrap" aria-label="This week"><div class="week">' + strip + '</div><p class="week-line">' + weekLine + '</p>' + splitStrip() + '</section>' +
       upNext + highlights + backupNudge();
   }
   // ----- Backup file reminder -----
@@ -1097,19 +1113,45 @@
   }
 
   /** Working sets per muscle group, this week so far vs last week. Plain counts; no "ideal" ranges. */
+  /** "today", "yesterday", "3 days ago"; past a month, "over a month ago". */
+  function agoWords(days) {
+    return days <= 0 ? 'today' : days === 1 ? 'yesterday' : days <= 30 ? days + ' days ago' : 'over a month ago';
+  }
+  function agoShort(days) { return days <= 0 ? 'today' : days > 30 ? '30d+' : days + 'd'; }
+  function trainingSplit() { return M.trainingSplit(S.workouts, function (id) { return exById(id).muscle; }, new Date()); }
+  /**
+   * Push · Pull · Legs: working sets this week vs last week and when each muscle was last trained, grouped by split.
+   * A record of what you did, not a recovery estimate (the app never guesses how recovered a muscle is).
+   */
   function muscleCard() {
-    var rows = M.setsByMuscle(S.workouts, function (id) { return exById(id).muscle; }, new Date());
-    if (!rows.length) return '';
-    var max = Math.max.apply(null, rows.map(function (r) { return Math.max(r.thisWeek, r.lastWeek); })) || 1;
-    var list = rows.map(function (r) {
-      return '<li class="mus-row"><span class="mus-name">' + esc(r.muscle) + '</span>' +
-        '<span class="mus-track" aria-hidden="true"><span class="mus-last" style="width:' + (100 * r.lastWeek / max).toFixed(1) + '%"></span>' +
-        '<span class="mus-now" style="width:' + (100 * r.thisWeek / max).toFixed(1) + '%"></span></span>' +
-        '<span class="mus-num" aria-label="' + r.thisWeek + ' sets this week, ' + r.lastWeek + ' last week">' + r.thisWeek + '<small> / ' + r.lastWeek + '</small></span></li>';
+    var groups = trainingSplit();
+    if (!groups.length) return '';
+    var all = [];
+    groups.forEach(function (g) { all = all.concat(g.muscles); });
+    var max = Math.max.apply(null, all.map(function (r) { return Math.max(r.thisWeek, r.lastWeek); })) || 1;
+    var html = groups.map(function (g) {
+      var rows = g.muscles.map(function (r) {
+        return '<li class="mus-row ppl"><span class="mus-name">' + esc(r.muscle) + '</span>' +
+          '<span class="mus-track" aria-hidden="true"><span class="mus-last" style="width:' + (100 * r.lastWeek / max).toFixed(1) + '%"></span>' +
+          '<span class="mus-now" style="width:' + (100 * r.thisWeek / max).toFixed(1) + '%"></span></span>' +
+          '<span class="mus-num" aria-label="' + r.thisWeek + ' sets this week, ' + r.lastWeek + ' last week">' + r.thisWeek + '<small> / ' + r.lastWeek + '</small></span>' +
+          '<span class="mus-ago" aria-label="last trained ' + agoWords(r.days) + '">' + agoShort(r.days) + '</span></li>';
+      }).join('');
+      return '<div class="ppl-group"><div class="ppl-head"><strong>' + g.name + '</strong><span class="muted small">Last trained ' + agoWords(g.days) + '</span>' +
+        '<span class="mus-num" aria-label="' + g.thisWeek + ' sets this week, ' + g.lastWeek + ' last week">' + g.thisWeek + '<small> / ' + g.lastWeek + '</small></span></div>' +
+        '<ul class="mus-list">' + rows + '</ul></div>';
     }).join('');
-    return '<section class="card" aria-label="Sets per muscle"><div class="pr-chart-head"><h2 class="card-title">Sets per muscle</h2><span class="muted small">this week / last week</span></div>' +
-      '<ul class="mus-list">' + list + '</ul>' +
-      '<p class="muted small">Working sets from Monday, by each exercise’s main muscle. Warm-ups don’t count. The faint bar is last week.</p></section>';
+    return '<section class="card" aria-label="Push, pull, legs"><div class="pr-chart-head"><h2 class="card-title">Push · Pull · Legs</h2><span class="muted small">sets: this week / last</span></div>' +
+      html +
+      '<p class="muted small">Working sets from Monday by each exercise’s main muscle (bench press counts for chest); the faint bar is last week. The right column is days since you last trained it: what you did, not a guess at recovery.</p></section>';
+  }
+  /** Today: one line showing when push, pull and legs were last trained, to help pick the next workout. */
+  function splitStrip() {
+    var groups = trainingSplit().filter(function (g) { return g.id !== 'core'; });
+    if (!groups.length) return '';
+    return '<div class="ppl-strip" aria-label="Last trained">' + groups.map(function (g) {
+      return '<span class="ppl-chip"><b>' + g.name + '</b><span>' + agoWords(g.days) + '</span></span>';
+    }).join('') + '</div>';
   }
 
   /** One lift over time. Tap-free on purpose: the session list below it holds the same numbers. */
@@ -1683,6 +1725,34 @@
       if (!(Number(set.reps) > 0)) { toast('Enter reps first', 'warn'); render(); return; }
       if (kind === 'bodyweight' || set.weight == null) set.weight = 0;
     }
+    var odd = (kind === 'weight' || kind === 'weighted') && oddWeight(entry.exerciseId, Number(set.weight), S.active.unit);
+    if (odd) {
+      confirmBox('Is ' + U.fmtNum(set.weight) + ' ' + S.active.unit + ' right?', odd + ' Check for a typo; a wrong number would become a record that later sessions have to beat.', 'Yes, confirm').then(function (ok) {
+        if (ok) markSetDone(entry, set); else { render(); var inp = document.querySelector('.set-row.active input[data-field="weight"]'); if (inp) inp.focus(); }
+      });
+      return;
+    }
+    markSetDone(entry, set);
+  }
+  /**
+   * A weight worth double-checking before it's confirmed: over 1,000 lb / 450 kg, or more than 2.5 times (and
+   * 50 lb / 20 kg more than) your heaviest working set of this lift. Returns the reason, or '' when it looks fine.
+   */
+  function oddWeight(exerciseId, w, u) {
+    if (!(w > 0)) return '';
+    if (w > (u === 'kg' ? 450 : 1000)) return 'That’s more than anyone has lifted for most exercises.';
+    var best = 0;
+    S.workouts.forEach(function (wk) {
+      if (!wk.endedAt) return;
+      wk.exercises.forEach(function (e) {
+        if (e.exerciseId !== exerciseId) return;
+        e.sets.forEach(function (st) { if (st.done && !st.warmup && Number(st.weight) > 0) best = Math.max(best, U.convert(Number(st.weight), wk.unit, u)); });
+      });
+    });
+    if (best > 0 && w > best * 2.5 && w - best > (u === 'kg' ? 20 : 50)) return 'Your heaviest so far is ' + U.fmtNum(Math.round(best * 10) / 10) + ' ' + u + '.';
+    return '';
+  }
+  function markSetDone(entry, set) {
     set.done = true;
     S.active.lastSetAt = new Date().toISOString();
     vibrate(12);
@@ -2104,7 +2174,7 @@
       });
     },
     'rest-skip': function () { V.rest = null; render(); },
-    'rest-add': function () { if (V.rest) { V.rest.endsAt += 30000; V.rest.total += 30000; tick(); } },
+    'rest-add': function () { if (V.rest) { V.rest.endsAt += 30000; V.rest.total += 30000; keepRest(); tick(); } },
     'ex-focus': function (el) { V.focusEntry = el.dataset.e; render(); },
     'pr-close': function () { V.prMoment = null; render(); },
     'summary-done': function () { V.summary = null; V.screen = null; V.tab = 'home'; render(); },
@@ -2570,6 +2640,7 @@
       var left = V.rest.endsAt - Date.now();
       if (left <= 0) {
         V.rest = null;
+        keepRest();
         vibrate([80, 80, 80]);
         toast('Rest over — next set');
         document.querySelectorAll('.rest-dock, [data-rest-note]').forEach(function (el) { el.remove(); });
@@ -2583,6 +2654,7 @@
 
   // ---------- start-up ----------
   function boot() {
+    restoreRest();
     CLOUD.init({
       getState: function () { return S; },
       setState: function (next) { S = next; ST.save(S); },

@@ -191,3 +191,71 @@ test('body weight, RPE and theme sync between phones (1.8.0)', async () => {
   await run(a, cloud);
   assert.deepEqual(a.state.bodyWeights.map((x) => x.id), ['b1', 'b2']);
 });
+
+// ---------- Profile changed on two devices before syncing (2.1.0) ----------
+async function twoPhones() {
+  const cloud = fakeCloud();
+  const a = phone(); a.state.settings.setupDone = true;
+  a.state.templates.push({ id: 't1', name: 'Push', exercises: [{ exerciseId: 'bench', sets: 3 }] }, { id: 't2', name: 'Pull', exercises: [] });
+  await run(a, cloud);
+  const b = phone(); await run(b, cloud);
+  return { cloud, a, b };
+}
+const names = (p) => p.state.templates.map((t) => t.name).sort();
+
+test('routines added on two phones before syncing are both kept', async () => {
+  const { cloud, a, b } = await twoPhones();
+  a.state.templates.push({ id: 'ta', name: 'Made on A', exercises: [] });
+  b.state.templates.push({ id: 'tb', name: 'Made on B', exercises: [] });
+  await run(a, cloud); await run(b, cloud); await run(a, cloud);
+  assert.deepEqual(names(a), ['Made on A', 'Made on B', 'Pull', 'Push']);
+  assert.deepEqual(names(b), names(a));
+  assert.deepEqual(cloud.profile.data.templates.map((t) => t.name).sort(), names(a));
+});
+
+test('an edit on one phone and an untouched copy on the other: the edit wins; both edited: the later sync wins', async () => {
+  const { cloud, a, b } = await twoPhones();
+  a.state.templates[0].name = 'Push (A)';                       // A renames Push
+  b.state.templates.push({ id: 'tb', name: 'Legs', exercises: [] }); // B changes something else
+  await run(a, cloud); await run(b, cloud); await run(a, cloud);
+  assert.deepEqual(names(b), ['Legs', 'Pull', 'Push (A)']);
+  a.state.templates[1].name = 'Pull (A)'; b.state.templates[1].name = 'Pull (B)'; // both rename Pull
+  await run(a, cloud); await run(b, cloud); await run(a, cloud);
+  assert.equal(a.state.templates.find((t) => t.id === 't2').name, 'Pull (B)');
+  assert.equal(b.state.templates.find((t) => t.id === 't2').name, 'Pull (B)');
+});
+
+test('deleted on one phone: gone everywhere unless the other phone edited it', async () => {
+  const { cloud, a, b } = await twoPhones();
+  a.state.templates = a.state.templates.filter((t) => t.id !== 't1');            // A deletes Push
+  b.state.templates.push({ id: 'tb', name: 'Legs', exercises: [] });
+  await run(a, cloud); await run(b, cloud); await run(a, cloud);
+  assert.deepEqual(names(a), ['Legs', 'Pull']); assert.deepEqual(names(b), ['Legs', 'Pull']);
+  a.state.templates = a.state.templates.filter((t) => t.id !== 't2');            // A deletes Pull
+  b.state.templates.find((t) => t.id === 't2').name = 'Pull, edited';          // B edits it meanwhile
+  await run(a, cloud); await run(b, cloud); await run(a, cloud);
+  assert.deepEqual(names(a), ['Legs', 'Pull, edited']);
+});
+
+test('different settings changed on two phones are both kept; body weights from both are kept', async () => {
+  const { cloud, a, b } = await twoPhones();
+  a.state.settings.unit = 'kg'; a.state.settings.exerciseTypes = { dip: 'weighted' };
+  b.state.settings.theme = 'light'; b.state.settings.exerciseTypes = { 'pull-up': 'assisted' };
+  a.state.bodyWeights.push({ id: 'w1', date: '2026-11-20T12:00:00.000Z', weight: 180, unit: 'lb' });
+  b.state.bodyWeights.push({ id: 'w2', date: '2026-11-21T12:00:00.000Z', weight: 179, unit: 'lb' });
+  await run(a, cloud); await run(b, cloud); await run(a, cloud);
+  for (const p of [a, b]) {
+    assert.equal(p.state.settings.unit, 'kg');
+    assert.equal(p.state.settings.theme, 'light');
+    assert.deepEqual(p.state.settings.exerciseTypes, { dip: 'weighted', 'pull-up': 'assisted' });
+    assert.deepEqual(p.state.bodyWeights.map((x) => x.id), ['w1', 'w2']);
+  }
+});
+
+test('a phone that synced before 2.1.0 (no saved base) keeps both sides instead of dropping the cloud’s', async () => {
+  const { cloud, a, b } = await twoPhones();
+  b.meta.profileBase = null;                                     // as left by an older version
+  a.state.templates.push({ id: 'ta', name: 'Made on A', exercises: [] }); await run(a, cloud);
+  b.state.templates.push({ id: 'tb', name: 'Made on B', exercises: [] }); await run(b, cloud);
+  assert.deepEqual(names(b), ['Made on A', 'Made on B', 'Pull', 'Push']);
+});

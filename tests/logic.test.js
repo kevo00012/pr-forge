@@ -732,3 +732,65 @@ test('library equipment filled in from names where plain; logging defaults uncha
   assert.equal(ex.defaultTracking(by('Muscle Up')), 'weight');      // relabelled as body weight, still logged with a weight box as before
   assert.ok(ex.BUILT_IN.filter((e) => e.library && e.equipment === 'Other').length < 130);
 });
+
+// ---------- Strong and Hevy import (2.6.0) ----------
+const histOpts = (extra) => { let n = 0; return Object.assign({ exercises: ex.BUILT_IN, targetUnit: 'lb', uid: () => 'id' + (++n), batchId: 'b1' }, extra); };
+const STRONG = [
+  'Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Distance,Seconds,Notes,Workout Notes,RPE',
+  '2026-10-01 07:30:00,Push Day,1h 5m,Bench Press (Barbell),W,95,10,0,0,,,',
+  '2026-10-01 07:30:00,Push Day,1h 5m,Bench Press (Barbell),1,185,5,0,0,,,8',
+  '2026-10-01 07:30:00,Push Day,1h 5m,Bench Press (Barbell),2,185,5,0,0,,,8.5',
+  '2026-10-01 07:30:00,Push Day,1h 5m,Plank,1,0,0,0,60,,,',
+  '2026-10-01 07:30:00,Push Day,1h 5m,Rowing (Machine),1,0,0,2000,0,,,',
+  '2026-10-03 18:00:00,Pull Day,50m,Zercher Wiggle,1,100,8,0,0,,,'
+].join('\n');
+
+test('Strong export: detected, grouped into workouts, warm-ups, RPE, duration, timed sets, unknown names', () => {
+  const det = importers.detectHistory(STRONG);
+  assert.deepEqual([det.source, det.needsUnit], ['strong', true]);
+  const r = importers.parseHistory(STRONG, histOpts({ source: 'strong', sep: ',', sourceUnit: 'kg' }));
+  assert.equal(r.stats.workouts, 2); assert.equal(r.stats.sets, 5); assert.equal(r.stats.skipped, 1); // distance-only row
+  const push = r.workouts[0];
+  assert.equal(push.name, 'Push Day'); assert.equal(push.imported, true);
+  assert.equal((new Date(push.endedAt) - new Date(push.startedAt)) / 60000, 65);
+  const bench = push.exercises.find((e) => e.exerciseId === 'bench-press');
+  assert.deepEqual(bench.sets.map((s) => [s.warmup, s.weight, s.reps, s.rpe]), [[true, 209.5, 10, undefined], [false, 408, 5, 8], [false, 408, 5, 8.5]]); // kg → lb
+  assert.equal(push.exercises.find((e) => e.exerciseId === 'plank').sets[0].seconds, 60);
+  assert.deepEqual(r.stats.created, ['Zercher Wiggle']);
+  // semicolon variant reads the same; re-import finds the duplicates
+  const semi = STRONG.split('\n').map((l) => l.split(',').map((c) => '"' + c + '"').join(';')).join('\n');
+  const d2 = importers.detectHistory(semi);
+  const r2 = importers.parseHistory(semi, histOpts({ source: 'strong', sep: d2.sep, sourceUnit: 'kg' }));
+  assert.equal(r2.stats.sets, 5);
+  const keys = {}; r.workouts.forEach((w) => { keys[w.sourceKey] = true; });
+  assert.equal(importers.parseHistory(STRONG, histOpts({ source: 'strong', sep: ',', sourceUnit: 'kg', existingKeys: keys })).stats.duplicateDays, 2);
+});
+
+test('Hevy export: units from the header, warm-ups, supersets kept, its date format', () => {
+  const HEVY = [
+    'title,start_time,end_time,description,exercise_title,superset_id,exercise_notes,set_index,set_type,weight_lbs,reps,distance_miles,duration_seconds,rpe',
+    'Upper A,"15 Jul 2026, 09:52","15 Jul 2026, 10:58",,Bench Press (Barbell),,,0,warmup,95,10,,,',
+    'Upper A,"15 Jul 2026, 09:52","15 Jul 2026, 10:58",,Bench Press (Barbell),,,1,normal,205,5,,,9',
+    'Upper A,"15 Jul 2026, 09:52","15 Jul 2026, 10:58",,Lat Pulldown (Cable),0,,0,normal,140,10,,,',
+    'Upper A,"15 Jul 2026, 09:52","15 Jul 2026, 10:58",,Face Pull,0,,0,normal,50,15,,,'
+  ].join('\n');
+  const det = importers.detectHistory(HEVY);
+  assert.deepEqual([det.source, det.needsUnit], ['hevy', false]);
+  const r = importers.parseHistory(HEVY, histOpts({ source: 'hevy', sep: ',' }));
+  const w = r.workouts[0];
+  assert.equal(w.name, 'Upper A');
+  assert.equal(new Date(w.startedAt).getHours(), 9); assert.equal((new Date(w.endedAt) - new Date(w.startedAt)) / 60000, 66);
+  assert.deepEqual(w.exercises[0].sets.map((s) => [s.warmup, s.weight, s.rpe]), [[true, 95, undefined], [false, 205, 9]]);
+  assert.equal(w.exercises[1].superNext, true);       // lat pulldown + face pull share a superset id
+  assert.equal(!!w.exercises[2].superNext, false);
+  assert.equal(importers.detectHistory('Date,Exercise,Reps,Weight(lb)\n').source, 'fitbod');
+  assert.equal(importers.detectHistory('a,b,c\n1,2,3'), null);
+});
+
+test('warm-up plan: bar, then about 40/60/80% rounded to loadable weights (2.6.0)', () => {
+  assert.deepEqual(plates.warmupPlan(225, 45, 'lb'), [{ weight: 45, reps: 10 }, { weight: 90, reps: 5 }, { weight: 135, reps: 3 }, { weight: 180, reps: 2 }]);
+  assert.deepEqual(plates.warmupPlan(100, 20, 'kg'), [{ weight: 20, reps: 10 }, { weight: 40, reps: 5 }, { weight: 60, reps: 3 }, { weight: 80, reps: 2 }]);
+  assert.deepEqual(plates.warmupPlan(95, 45, 'lb'), [{ weight: 45, reps: 10 }, { weight: 55, reps: 3 }, { weight: 75, reps: 2 }]); // 40% = bar, dropped
+  assert.deepEqual(plates.warmupPlan(45, 45, 'lb'), []);
+  assert.deepEqual(plates.warmupPlan(0, 45, 'lb'), []);
+});

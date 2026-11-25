@@ -28,7 +28,8 @@
   var SKIP_WORDS = { the: 1, with: 1, a: 1, on: 1 };
 
   /** Splits CSV text into rows of fields. Handles quotes, escaped quotes, CRLF and a byte-order mark. */
-  function parseCsv(text) {
+  function parseCsv(text, delimiter) {
+    var sep = delimiter || ',';
     var s = String(text).replace(/^﻿/, '');
     var rows = [], row = [], field = '', quoted = false;
     for (var i = 0; i < s.length; i++) {
@@ -38,7 +39,7 @@
         else if (c === '"') quoted = false;
         else field += c;
       } else if (c === '"') quoted = true;
-      else if (c === ',') { row.push(field); field = ''; }
+      else if (c === sep) { row.push(field); field = ''; }
       else if (c === '\n' || c === '\r') {
         if (c === '\r' && s[i + 1] === '\n') i++;
         row.push(field); field = '';
@@ -354,7 +355,7 @@
   }
 
   /**
-   * A CSV of exercises as lines the plan reader understands. Refuses a Fitbod history export.
+   * A CSV of exercises as lines the plan reader understands. Refuses a Fitbod, Strong or Hevy history export.
    * With a header row, columns are found by name in any order: Exercise (or Name/Movement), Sets, Reps,
    * and optionally Workout/Day/Session, which splits the rows into separate workouts. Without one, rows pass through as table rows.
    */
@@ -362,8 +363,10 @@
     var rows = parseCsv(text).filter(function (r) { return r.some(function (c) { return String(c).trim(); }); });
     if (!rows.length) return '';
     var head = rows[0];
-    if (column(head, /^date$/i) >= 0 && column(head, /^exercise$/i) >= 0 && column(head, /^reps$/i) >= 0) {
-      throw new Error('This is a Fitbod history export. Use Settings → Import from Fitbod for it.');
+    var hist = detectHistory(text);
+    if (hist) {
+      var app = { fitbod: 'Fitbod', strong: 'Strong', hevy: 'Hevy' }[hist.source];
+      throw new Error('This is a ' + app + ' workout history. Use Settings → Import → Past workouts for it.');
     }
     var cEx = column(head, /^(exercise|exercise name|name|movement|lift)$/i);
     var cSets, cReps, cDay, body;
@@ -431,6 +434,126 @@
     return rows.map(function (r) { return r.map(cell).join(','); }).join('\r\n') + '\r\n';
   }
 
+  // ---------- Strong and Hevy history (2.6.0) ----------
+  // Layouts from public descriptions of their exports (Nov 2026), not from Strong or Hevy documentation:
+  //  Strong: one row per set; Date, Workout Name, Duration, Exercise Name, Set Order (1, 2… or W/D/F), Weight, Reps,
+  //    Distance, Seconds, Notes, Workout Notes, RPE; comma- or semicolon-separated; weights in the app's unit, which
+  //    the file doesn't say (unless a "Weight Unit" column is there).
+  //  Hevy: one row per set; title, start_time ("15 Jul 2026, 09:52"), end_time, exercise_title, superset_id,
+  //    set_index, set_type (normal / warmup / dropset / failure), weight_lbs or weight_kg, reps, duration_seconds, rpe.
+  function firstLine(text) { return String(text).replace(/^﻿/, '').split(/\r?\n/)[0] || ''; }
+  /** Which app a workout-history CSV came from: { source: 'fitbod' | 'strong' | 'hevy', needsUnit } or null. */
+  function detectHistory(text) {
+    var line = firstLine(text);
+    var sep = (line.match(/;/g) || []).length > (line.match(/,/g) || []).length ? ';' : ',';
+    var head = parseCsv(line, sep)[0] || [];
+    var has = function (re) { return column(head, re) >= 0; };
+    if (has(/^exercise_title$/i) && has(/^start_time$/i)) return { source: 'hevy', sep: sep, needsUnit: !has(/^weight_(kg|lbs?)$/i) };
+    if (has(/^exercise name$/i) && has(/^set order$/i)) return { source: 'strong', sep: sep, needsUnit: !has(/^weight unit$/i) };
+    if (has(/^exercise$/i) && has(/^date$/i) && has(/^reps$/i)) return { source: 'fitbod', sep: sep, needsUnit: false };
+    return null;
+  }
+  var MONTHS = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+  /** "2026-07-15 09:52:00", "15 Jul 2026, 09:52" or ISO → local time in ms, or null. */
+  function parseWhen(v) {
+    var t = String(v || '').trim();
+    var m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(t);
+    if (m && !/(Z|[+-]\d{2}:?\d{2})$/.test(t)) return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)).getTime();
+    m = /^(\d{1,2}) ([A-Za-z]{3})[a-z]* (\d{4}),? (\d{1,2}):(\d{2})/.exec(t);
+    if (m && MONTHS[m[2].toLowerCase()] != null) return new Date(+m[3], MONTHS[m[2].toLowerCase()], +m[1], +m[4], +m[5]).getTime();
+    var d = Date.parse(t);
+    return isNaN(d) ? null : d;
+  }
+  /** Strong's Duration: "1h 5m", "45m", "65m 30s", "3600" (seconds) → minutes, or 0. */
+  function parseDurationMin(v) {
+    var t = String(v || '').trim().toLowerCase();
+    if (/^\d+$/.test(t)) return Math.round(+t / 60);
+    var h = /(\d+)\s*h/.exec(t), mi = /(\d+)\s*m(?!s)/.exec(t), se = /(\d+)\s*s/.exec(t);
+    return (h ? +h[1] * 60 : 0) + (mi ? +mi[1] : 0) + (se ? Math.round(+se[1] / 60) : 0);
+  }
+  /**
+   * Strong or Hevy export → workouts ready to store, the same shape parseFitbod returns.
+   * options: { source, sep, sourceUnit ('lb'|'kg', when the file doesn't say), exercises, targetUnit, uid, batchId, existingKeys }
+   */
+  function parseHistory(text, options) {
+    var src = options.source;
+    var rows = parseCsv(text, options.sep || ',');
+    if (rows.length < 2) throw new Error('This file has no workouts in it.');
+    var h = rows[0];
+    var col = src === 'hevy'
+      ? { title: column(h, /^title$/i), start: column(h, /^start_time$/i), end: column(h, /^end_time$/i), exercise: column(h, /^exercise_title$/i),
+          type: column(h, /^set_type$/i), weight: column(h, /^weight(_kg|_lbs?)?$/i), reps: column(h, /^reps$/i), seconds: column(h, /^duration_seconds$/i),
+          rpe: column(h, /^rpe$/i), superset: column(h, /^superset_id$/i) }
+      : { title: column(h, /^workout name$/i), start: column(h, /^date$/i), duration: column(h, /^(workout )?duration$/i), exercise: column(h, /^exercise name$/i),
+          order: column(h, /^set order$/i), weight: column(h, /^weight$/i), unitCol: column(h, /^weight unit$/i), reps: column(h, /^reps$/i), seconds: column(h, /^seconds$/i),
+          rpe: column(h, /^rpe$/i) };
+    var label = src === 'hevy' ? 'Hevy' : 'Strong';
+    if (col.start < 0 || col.exercise < 0 || col.reps < 0) throw new Error('This doesn’t look like a ' + label + ' export.');
+    var fileUnit = src === 'hevy' && col.weight >= 0 ? (/_kg$/i.test(h[col.weight]) ? 'kg' : /_lb/i.test(h[col.weight]) ? 'lb' : null) : null;
+    var match = matcher(options.exercises);
+    var sessions = {}, order = [], customs = {}, duplicates = {};
+    var stats = { sets: 0, skipped: 0, duplicateDays: 0, matched: {}, created: {} };
+    rows.slice(1).forEach(function (r) {
+      if (!r.length || (r.length === 1 && !r[0])) return;
+      var when = parseWhen(r[col.start]);
+      var name = String(r[col.exercise] || '').trim();
+      var reps = Math.round(number(r[col.reps]));
+      var seconds = col.seconds >= 0 ? Math.round(number(r[col.seconds])) : 0;
+      if (!when || !name || (!reps && !seconds)) { stats.skipped++; return; }
+      var title = String(r[col.title] || '').trim() || label + ' workout';
+      var key = src + ':' + String(r[col.start]).trim() + ':' + title;
+      if (options.existingKeys && options.existingKeys[key]) { duplicates[key] = true; return; }
+      var id = match(name);
+      if (id) stats.matched[name] = true;
+      else {
+        stats.created[name] = true;
+        if (!customs[name]) customs[name] = { id: 'c-' + options.uid(), name: name.slice(0, 80), muscle: 'Other', equipment: 'Other',
+          side: /\b(one|single)[- ]arm/i.test(name) ? 'arm' : /\b(one|single)[- ]leg|lunge|split squat|step[- ]?up/i.test(name) ? 'leg' : '',
+          custom: true, importBatch: options.batchId };
+        id = customs[name].id;
+      }
+      var s = sessions[key];
+      if (!s) {
+        var end = src === 'hevy' && col.end >= 0 ? parseWhen(r[col.end]) : col.duration >= 0 ? when + parseDurationMin(r[col.duration]) * 60000 : null;
+        s = sessions[key] = { key: key, title: title, start: when, end: end && end > when ? end : when + 60000, order: [], entries: {}, supers: {} };
+        order.push(key);
+      }
+      var entryKey = id;
+      if (!s.entries[entryKey]) { s.entries[entryKey] = { id: options.uid(), exerciseId: id, sets: [] }; s.order.push(entryKey); }
+      if (src === 'hevy' && col.superset >= 0 && String(r[col.superset]).trim() !== '') s.supers[entryKey] = String(r[col.superset]).trim();
+      var unitHere = fileUnit || (col.unitCol >= 0 && /kg/i.test(r[col.unitCol]) ? 'kg' : col.unitCol >= 0 && /lb/i.test(r[col.unitCol]) ? 'lb' : options.sourceUnit || options.targetUnit);
+      var weight = col.weight >= 0 ? number(r[col.weight]) : 0;
+      var converted = weight ? units.roundForEntry(units.convert(weight, unitHere, options.targetUnit)) : 0;
+      var warm = src === 'hevy' ? /^warm/i.test(String(r[col.type] || '').trim()) : /^w$/i.test(String(r[col.order] || '').trim());
+      var set = { id: options.uid(), weight: reps ? converted : 0, reps: reps || null, seconds: reps ? null : seconds, done: true, warmup: warm,
+        tracking: reps ? (converted ? 'weight' : 'bodyweight') : 'timed' };
+      var rpe = col.rpe >= 0 ? number(r[col.rpe]) : 0;
+      if (rpe >= 1 && rpe <= 10) set.rpe = Math.round(rpe * 2) / 2;
+      s.entries[entryKey].sets.push(set);
+      stats.sets++;
+    });
+    var workouts = order.map(function (k) {
+      var s = sessions[k];
+      var exercises = s.order.map(function (ek, i) {
+        var e = s.entries[ek];
+        e.tracking = e.sets[e.sets.length - 1].tracking;
+        var next = s.order[i + 1];
+        if (next && s.supers[ek] && s.supers[ek] === s.supers[next]) e.superNext = true; // Hevy supersets stay linked
+        return e;
+      });
+      return { id: options.uid(), name: s.title.slice(0, 60), templateId: null, unit: options.targetUnit,
+        startedAt: new Date(s.start).toISOString(), endedAt: new Date(s.end).toISOString(),
+        imported: true, importBatch: options.batchId, sourceKey: s.key, exercises: exercises };
+    }).sort(function (a, b) { return new Date(a.startedAt) - new Date(b.startedAt); });
+    stats.duplicateDays = Object.keys(duplicates).length;
+    return {
+      workouts: workouts,
+      customs: Object.keys(customs).map(function (k) { return customs[k]; }),
+      stats: { workouts: workouts.length, sets: stats.sets, skipped: stats.skipped, duplicateDays: stats.duplicateDays,
+        matched: Object.keys(stats.matched).length, created: Object.keys(stats.created).sort() }
+    };
+  }
+
   /** "8", "8-12", "8–12 reps", "8 to 12" → { min, max }; anything else (AMRAP, 30s, blank) → null. */
   function parseRepTarget(text) {
     var m = String(text == null ? '' : text).trim().match(/^(\d{1,3})(?:\s*(?:-|–|—|to)\s*(\d{1,3}))?(?:\s*reps?)?$/i);
@@ -445,10 +568,10 @@
   function routineToText(t, nameOf) {
     return ['Routine: ' + t.name].concat(t.exercises.map(function (e) {
       return nameOf(e.exerciseId) + ': ' + e.sets + ' set' + (e.sets === 1 ? '' : 's') + (e.reps ? ' × ' + repTargetText(e.reps) + ' reps' : '');
-    })).concat(['', 'Shared from PR Forge. To add it: Routines → New → Paste or import a plan.']).join('\n');
+    })).concat(['', 'Shared from PR Forge, the free lifting log (no ads, no limits): https://kevo00012.github.io/pr-forge/ To add it: Routines → New → Paste or import a plan.']).join('\n');
   }
 
-  var api = { workoutsToCsv: workoutsToCsv, parseRepTarget: parseRepTarget, repTargetText: repTargetText, routineToText: routineToText, parseCsv: parseCsv, parseFitbod: parseFitbod, parseWorkoutText: parseWorkoutText, looksLikeCsv: looksLikeCsv, pdfItemsToText: pdfItemsToText, csvToPlanText: csvToPlanText };
+  var api = { detectHistory: detectHistory, parseHistory: parseHistory, parseWhen: parseWhen, workoutsToCsv: workoutsToCsv, parseRepTarget: parseRepTarget, repTargetText: repTargetText, routineToText: routineToText, parseCsv: parseCsv, parseFitbod: parseFitbod, parseWorkoutText: parseWorkoutText, looksLikeCsv: looksLikeCsv, pdfItemsToText: pdfItemsToText, csvToPlanText: csvToPlanText };
   root.PRF = root.PRF || {};
   root.PRF.importers = api;
   if (typeof module === 'object' && module.exports) module.exports = api;

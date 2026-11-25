@@ -13,7 +13,7 @@
   function defaults() {
     return {
       schema: SCHEMA,
-      settings: { unit: 'lb', restSeconds: 90, barLb: 45, barKg: 20, exerciseTypes: {}, exerciseSides: {}, pinned: [], rpe: false, theme: 'dark', setupDone: false },
+      settings: { unit: 'lb', restSeconds: 90, barLb: 45, barKg: 20, exerciseTypes: {}, exerciseSides: {}, exerciseNotes: {}, restSound: true, pinned: [], rpe: false, theme: 'dark', setupDone: false },
       customExercises: [],
       bodyWeights: [],
       templates: [],
@@ -94,6 +94,8 @@
     if (w.imported) out.imported = true;
     if (w.importBatch) out.importBatch = String(w.importBatch);
     if (w.sourceKey) out.sourceKey = String(w.sourceKey);
+    var note = String(w.note == null ? '' : w.note).trim().slice(0, 1000);
+    if (note) out.note = note;
     if (!out.endedAt && w.lastSetAt && !isNaN(new Date(w.lastSetAt))) out.lastSetAt = new Date(w.lastSetAt).toISOString(); // workout in progress only
     return out;
   }
@@ -115,6 +117,14 @@
         if (trackingOrNull(st.exerciseTypes[id])) d.settings.exerciseTypes[id] = st.exerciseTypes[id];
       });
     }
+    // Notes that stay with an exercise ("seat 4, wide grip"), shown every time it's logged (2.7.0).
+    if (isObj(st.exerciseNotes)) {
+      Object.keys(st.exerciseNotes).forEach(function (id) {
+        var t = String(st.exerciseNotes[id] == null ? '' : st.exerciseNotes[id]).trim().slice(0, 200);
+        if (t) d.settings.exerciseNotes[id] = t;
+      });
+    }
+    d.settings.restSound = st.restSound !== false;
     // Your choice of "one arm / one leg at a time / both together" for an exercise; a label only, never a number.
     if (isObj(st.exerciseSides)) {
       Object.keys(st.exerciseSides).forEach(function (id) {

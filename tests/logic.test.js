@@ -602,18 +602,18 @@ test('sets per muscle: this week vs last week, warm-ups and unconfirmed sets ign
 // ---------- 1.8.0: CSV export, body weight, RPE, supersets, theme ----------
 test('CSV export: one row per confirmed set, quoted safely, oldest first', () => {
   const ws = [
-    { name: 'Legs, heavy', unit: 'kg', startedAt: new Date(2026, 10, 12, 18, 5).toISOString(), endedAt: new Date(2026, 10, 12, 19, 15).toISOString(), imported: true,
+    { name: 'Legs, heavy', unit: 'kg', startedAt: new Date(2026, 10, 12, 18, 5).toISOString(), endedAt: new Date(2026, 10, 12, 19, 15).toISOString(), imported: true, note: 'Felt strong, 8h sleep',
       exercises: [{ exerciseId: 'back-squat', sets: [{ weight: 100, reps: 5, done: true, warmup: false, rpe: 8 }] }] },
     { name: '=cmd', unit: 'lb', startedAt: new Date(2026, 10, 10, 7, 0).toISOString(), endedAt: new Date(2026, 10, 10, 8, 0).toISOString(),
       exercises: [{ exerciseId: 'plank', sets: [{ weight: 0, reps: null, seconds: 60, done: true, warmup: false }, { weight: null, reps: null, done: false }] },
                   { exerciseId: 'bench-press', sets: [{ weight: 45, reps: 10, done: true, warmup: true }, { weight: 135, reps: 5, done: true }] }] }];
   const csv = importers.workoutsToCsv(ws, (id) => ({ 'back-squat': 'Back Squat "Barbell"', plank: 'Plank', 'bench-press': 'Bench Press (Barbell)' })[id]);
   const lines = csv.trim().split('\r\n');
-  assert.equal(lines[0], 'Date,Time,Workout,Exercise,Set,Warm-up,Weight,Unit,Reps,Seconds,RPE,Duration (min),Imported');
+  assert.equal(lines[0], 'Date,Time,Workout,Exercise,Set,Warm-up,Weight,Unit,Reps,Seconds,RPE,Duration (min),Imported,Workout note');
   assert.equal(lines.length, 5);
-  assert.equal(lines[1], "2026-11-10,07:00,'=cmd,Plank,1,,0,lb,,60,,60,");
-  assert.equal(lines[2], "2026-11-10,07:00,'=cmd,Bench Press (Barbell),1,yes,45,lb,10,,,60,");
-  assert.equal(lines[4], '2026-11-12,18:05,"Legs, heavy","Back Squat ""Barbell""",1,,100,kg,5,,8,70,yes');
+  assert.equal(lines[1], "2026-11-10,07:00,'=cmd,Plank,1,,0,lb,,60,,60,,");
+  assert.equal(lines[2], "2026-11-10,07:00,'=cmd,Bench Press (Barbell),1,yes,45,lb,10,,,60,,");
+  assert.equal(lines[4], '2026-11-12,18:05,"Legs, heavy","Back Squat ""Barbell""",1,,100,kg,5,,8,70,yes,"Felt strong, 8h sleep"');
 });
 
 test('store keeps body weight, RPE, supersets and theme; drops bad values', () => {
@@ -793,4 +793,34 @@ test('warm-up plan: bar, then about 40/60/80% rounded to loadable weights (2.6.0
   assert.deepEqual(plates.warmupPlan(95, 45, 'lb'), [{ weight: 45, reps: 10 }, { weight: 55, reps: 3 }, { weight: 75, reps: 2 }]); // 40% = bar, dropped
   assert.deepEqual(plates.warmupPlan(45, 45, 'lb'), []);
   assert.deepEqual(plates.warmupPlan(0, 45, 'lb'), []);
+});
+
+// ---------- January batch (2.7.0): weekly recap, notes ----------
+test('weekly recap: last full week vs the week before, PRs that week, sets by group', () => {
+  const now = new Date(2026, 10, 25, 12); // Wednesday 25 Nov; last week = 16–22 Nov
+  const W = (id, d, list) => ({ id, name: 'W', unit: 'lb', startedAt: d.toISOString(), endedAt: d.toISOString(),
+    exercises: list.map(([ex, sets]) => ({ id: id + ex, exerciseId: ex, sets: sets.map(([w, r], i) => ({ id: id + ex + i, weight: w, reps: r, done: true })) })) });
+  const muscle = { bench: 'Chest', row: 'Back', squat: 'Quads' };
+  const ws = [
+    W('a', new Date(2026, 10, 10, 18), [['bench', [[200, 5]]]]),                      // week before
+    W('b', new Date(2026, 10, 17, 18), [['bench', [[205, 5], [205, 5]]], ['row', [[150, 8]]]]), // last week: e1RM PR
+    W('c', new Date(2026, 10, 20, 18), [['squat', [[225, 5], [225, 5], [225, 5]]]]),  // last week
+    W('d', new Date(2026, 10, 24, 18), [['bench', [[210, 5]]]])                        // this week: not counted
+  ];
+  const r = m.weekRecap(ws, (id) => muscle[id], now);
+  assert.equal(r.last.sessions, 2); assert.equal(r.last.sets, 6); assert.equal(r.prev.sessions, 1);
+  assert.deepEqual(r.last.groups, { push: 2, pull: 1, legs: 3, core: 0 });
+  assert.deepEqual(r.prs.map((e) => [e.workoutId, e.type]), [['b', 'e1rm']]);
+  assert.equal(m.weekRecap(ws.slice(0, 1), (id) => muscle[id], now), null);
+});
+
+test('notes: workout notes and exercise notes are kept, trimmed and capped; rest sound defaults on', () => {
+  const st = store.normalise({ workouts: [{ id: 'w', startedAt: '2026-11-01T10:00:00Z', endedAt: '2026-11-01T11:00:00Z', note: '  Felt good  ', exercises: [] }],
+    settings: { exerciseNotes: { 'bench-press': ' Seat 4 ', x: '   ', y: 'z'.repeat(300) } } });
+  assert.equal(st.workouts[0].note, 'Felt good');
+  assert.deepEqual(Object.keys(st.settings.exerciseNotes), ['bench-press', 'y']);
+  assert.equal(st.settings.exerciseNotes['bench-press'], 'Seat 4');
+  assert.equal(st.settings.exerciseNotes.y.length, 200);
+  assert.equal(st.settings.restSound, true);
+  assert.equal(store.normalise({ workouts: [], settings: { restSound: false } }).settings.restSound, false);
 });

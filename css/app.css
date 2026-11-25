@@ -717,3 +717,17 @@ a.btn { color: var(--text); text-decoration: none; }
 .warm-plan { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; padding: var(--space-1) 0 var(--space-3); }
 .warm-plan .muted { font-variant-numeric: tabular-nums; }
 .free-line { color: var(--soft); font-weight: 600; }
+
+/* January batch (2.7.0) */
+.then-line { font-size: var(--fs-s); color: var(--muted); }
+.then-line b { color: var(--soft); }
+.recap { gap: var(--space-3); }
+.recap .btn { align-self: flex-start; }
+.recap-line { font-size: var(--fs-l); color: var(--soft); font-variant-numeric: tabular-nums; }
+.recap-line b { color: var(--text); }
+.recap-pr { display: flex; align-items: center; gap: var(--space-3); font-size: var(--fs-m); font-weight: 600; color: var(--accent-ink); }
+.recap-pr .icon { width: 16px; height: 16px; flex: none; }
+.ex-note { display: flex; align-items: flex-start; gap: var(--space-3); font-size: var(--fs-s); color: var(--soft); line-height: 1.35; }
+.ex-note .icon { width: 15px; height: 15px; flex: none; margin-top: 1px; color: var(--muted); }
+.wk-note-show { display: flex; flex-direction: column; gap: var(--space-2); text-align: left; padding: var(--space-6) var(--space-8); border: 1px solid var(--line); border-radius: 16px; background: var(--surface); color: var(--soft); font-size: var(--fs-m); line-height: 1.4; white-space: pre-wrap; }
+.wk-note-text { font-size: var(--fs-m); color: var(--soft); line-height: 1.45; white-space: pre-wrap; }

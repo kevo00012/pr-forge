@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '2.6.0';
+  var VERSION = '2.7.0';
 
   var S = ST.load();
   var V = {
@@ -65,6 +65,14 @@
     { v: 'arm', label: 'One arm at a time', hint: 'Reps counted per arm, like concentration curls. Shows "Per arm".' },
     { v: 'leg', label: 'One leg at a time', hint: 'Reps counted per leg, like split squats. Shows "Per leg".' }
   ];
+  /** A note that stays with an exercise and shows every time it's logged ("seat 4, wide grip"). */
+  function exerciseNoteModal(id) {
+    var cur = (S.settings.exerciseNotes || {})[id] || '';
+    V.modal = { resolve: null };
+    openModal('<h2>Note for ' + esc(exById(id).name) + '</h2><label class="field"><span>Shows every time you log it</span>' +
+      '<textarea id="ex-note-text" rows="3" maxlength="200" placeholder="e.g. Seat 4, narrow grip">' + esc(cur) + '</textarea></label>' +
+      '<div class="modal-actions"><button class="btn ghost" data-act="modal-cancel">Cancel</button><button class="btn primary" data-act="ex-note-save" data-id="' + esc(id) + '">Save</button></div>');
+  }
   /** Lets you say whether a lift is done one side at a time. Only the label changes; no number is doubled or halved. */
   function sidesModal(id) {
     var ex = exById(id), current = ex.side === 'arm' ? 'arm' : ex.side === 'leg' ? 'leg' : 'both';
@@ -120,6 +128,29 @@
   function w(lb) { return U.fmtWeightLb(lb, unit()); }
   function vol(lb) { return U.fmtVolumeLb(lb, unit()); }
   function vibrate(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) { /* ignore */ } }
+  // Rest-over sound (2.7.0). iPhone web apps can't vibrate, so a short tone is the signal. Browsers only allow sound
+  // after a tap, so the audio is unlocked when a set is confirmed. It plays only while the app is open; with the
+  // ringer switch on silent, iPhone mutes it.
+  var audioCtx = null;
+  function unlockSound() {
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!audioCtx && AC) audioCtx = new AC();
+      if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    } catch (e) { audioCtx = null; }
+  }
+  function restBeep() {
+    if (!audioCtx || S.settings.restSound === false) return;
+    try {
+      var t0 = audioCtx.currentTime + 0.02;
+      [0, 0.22, 0.44].forEach(function (dt) {
+        var o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.type = 'sine'; o.frequency.value = 880;
+        g.gain.setValueAtTime(0.0001, t0 + dt); g.gain.exponentialRampToValueAtTime(0.25, t0 + dt + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dt + 0.16);
+        o.connect(g); g.connect(audioCtx.destination); o.start(t0 + dt); o.stop(t0 + dt + 0.18);
+      });
+    } catch (e) { /* no sound is fine */ }
+  }
 
   var ICONS = {
     home: '<path d="M3.5 10.5 12 4l8.5 6.5V20a1 1 0 0 1-1 1H15v-6H9v6H4.5a1 1 0 0 1-1-1z"/>',
@@ -491,7 +522,7 @@
         var more = t.exercises.length > 4 ? '<p class="plan-more">+' + (t.exercises.length - 4) + ' more</p>' : '';
         upNext = '<section class="card hero"><div class="hero-top"><span class="eyebrow on">Up next</span><span class="muted small">' + agoText(next.lastDate) + '</span></div>' +
           '<h2 class="big">' + esc(t.name) + '</h2>' +
-          (planRows ? '<ol class="plan">' + planRows + '</ol>' + more : '') +
+          (planRows ? '<ol class="plan">' + planRows + '</ol>' + more : '') + thenLine(t) +
           '<button class="btn primary block" data-act="start-template" data-id="' + esc(t.id) + '">Start workout' + icon('arrow', 'sm') + '</button>' +
           '<div class="row-2"><button class="btn ghost" data-act="tab" data-tab="workouts">' + icon('list', 'sm') + 'Other routines</button>' +
           '<button class="btn ghost" data-act="start-empty">' + icon('plus', 'sm') + 'Empty workout</button></div></section>';
@@ -519,7 +550,7 @@
     return '<header class="top row end"><div class="top"><p class="eyebrow">' + now.toLocaleDateString('en-US', { weekday: 'short' }) + ' · ' + now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + '</p><h1>Today</h1></div>' +
       '<div class="top-tools"><img class="wordmark-img" src="icons/wordmark.png" width="136" height="16" alt="PR Forge">' + settingsButton() + '</div></header>' +
       '<section class="week-wrap" aria-label="This week"><div class="week">' + strip + '</div><p class="week-line">' + weekLine + '</p>' + splitStrip() + '</section>' +
-      upNext + highlights + backupNudge();
+      upNext + recapCard() + highlights + backupNudge();
   }
   // ----- Backup file reminder -----
   // The cloud copy lives on Supabase's free plan, which keeps no backups of its own, so a file now and then is the
@@ -536,6 +567,35 @@
       (last ? 'Your last one was ' + shortDate(new Date(last).toISOString()) + '.' : 'You haven’t saved one on this phone yet.') +
       ' Your workouts are backed up to your account, but a file of your own is a second copy you keep.</p>' +
       '<div class="row-btns"><button class="btn ghost sm" data-act="export">Save backup file</button><button class="btn ghost sm" data-act="backup-snooze">Not now</button></div></section>';
+  }
+  /** "Then: Pull", the routine that comes up after this one (least recently done after it, as Up next works). */
+  function thenLine(t) {
+    if (S.templates.length < 2) return '';
+    var nowIso = new Date().toISOString();
+    var after = M.suggestNext(S.templates, S.workouts.concat([{ id: 'then', templateId: t.id, startedAt: nowIso, endedAt: nowIso, exercises: [] }]));
+    return after && after.template.id !== t.id ? '<p class="then-line">Then: <b>' + esc(after.template.name) + '</b></p>' : '';
+  }
+  // ----- Weekly recap (Today, the week after) -----
+  var RECAP_KEY = 'pr-forge:web:v1:recap-seen';
+  function recapCard() {
+    var r = M.weekRecap(S.workouts, function (id) { return exById(id).muscle; }, new Date());
+    if (!r || S.active || lsGet(RECAP_KEY) === r.weekStart) return '';
+    var L = r.last, P0 = r.prev, u = unit();
+    var start = new Date(r.weekStart), end = new Date(start.getTime() + 6 * 864e5);
+    var plural = function (n, one) { return n + ' ' + one + (n === 1 ? '' : 's'); };
+    var compare = P0.sessions ? 'The week before: ' + plural(P0.sessions, 'session') + ', ' + plural(P0.sets, 'set') + '.' : 'Nothing logged the week before.';
+    var names = {};
+    r.prs.forEach(function (e) { names[exById(e.exerciseId).name] = true; });
+    var prNames = Object.keys(names);
+    var groups = [['Push', L.groups.push], ['Pull', L.groups.pull], ['Legs', L.groups.legs], ['Core', L.groups.core]].filter(function (g) { return g[1]; })
+      .map(function (g) { return g[0] + ' ' + g[1]; }).join(' · ');
+    return '<section class="card recap" aria-label="Last week"><div class="pr-chart-head"><h2 class="card-title">Last week</h2><span class="muted small">' +
+        shortDate(start.toISOString()) + ' – ' + shortDate(end.toISOString()) + '</span></div>' +
+      '<p class="recap-line"><b>' + plural(L.sessions, 'session') + '</b> · ' + plural(L.sets, 'set') + ' · ' + vol(L.volumeLb) + '</p>' +
+      '<p class="muted small">' + compare + '</p>' +
+      (prNames.length ? '<p class="recap-pr">' + icon('trophy', 'sm') + plural(r.prs.length, 'PR') + ': ' + esc(prNames.slice(0, 3).join(', ')) + (prNames.length > 3 ? ' and ' + (prNames.length - 3) + ' more' : '') + '</p>' : '') +
+      (groups ? '<p class="muted small">Working sets: ' + groups + '</p>' : '') +
+      '<button class="btn ghost sm" data-act="recap-seen" data-v="' + esc(r.weekStart) + '">Got it</button></section>';
   }
   function stat(label, value, cls) {
     return '<div class="stat"><span class="stat-v' + (cls ? ' ' + cls : '') + '">' + value + '</span><span class="stat-l">' + label + '</span></div>';
@@ -657,6 +717,7 @@
         return html;
       }).join('');
       return '<section class="card ex-card" aria-label="' + esc(ex.name) + '"><div class="ex-head"><div class="ex-head-text"><h2>' + esc(ex.name) + '</h2>' +
+        (S.settings.exerciseNotes && S.settings.exerciseNotes[entry.exerciseId] ? '<p class="ex-note">' + icon('file', 'sm') + esc(S.settings.exerciseNotes[entry.exerciseId]) + '</p>' : '') +
         '<p class="ex-meta">' + (sup ? '<b class="sup-tag">' + sup + '</b> · ' : '') + esc(ex.equipment) + (side ? ' · ' + side : '') + (lastText ? ' · ' + lastText : '') + '</p>' + goalHtml(entry, last, a.unit, kind) + '</div>' +
         '<div class="ex-tools">' + (best ? '<span class="ex-best" title="Your best so far">' + best + '</span>' : '') +
         '<button class="icon-btn" data-act="ex-remove" data-e="' + entry.id + '" aria-label="Remove exercise">' + icon('close', 'sm') + '</button></div></div>' +
@@ -679,7 +740,9 @@
       staleBanner() +
       (S.workouts.length ? '' : '<p class="muted small tip">Faded numbers are last session’s. Tap ✓ to confirm a set — empty boxes take the faded values. Tap a set number to mark a warm-up.</p>') +
       cards +
-      '<button class="btn ghost block" data-act="add-exercise">' + icon('plus', 'sm') + 'Add exercise</button>' +
+      (a.note ? '<button class="wk-note-show" data-act="wk-note"><span class="card-title">Workout note</span><span>' + esc(a.note) + '</span></button>' : '') +
+      '<div class="row-2"><button class="btn ghost" data-act="add-exercise">' + icon('plus', 'sm') + 'Add exercise</button>' +
+      '<button class="btn ghost" data-act="wk-note">' + icon('file', 'sm') + (a.note ? 'Edit note' : 'Add note') + '</button></div>' +
       '<button class="btn danger-ghost block" data-act="discard-workout">Discard workout</button>';
   }
 
@@ -1061,6 +1124,8 @@
         '<div class="setting col"><span>Rest timer after each set</span><div class="chips">' + restChips + '</div></div>' +
         '<div class="setting"><span class="set-label">RPE<small>How hard each set felt, 1–10</small></span>' +
           '<div class="seg"><button class="' + (S.settings.rpe ? '' : 'on') + '" data-act="set-rpe" data-v="0" aria-pressed="' + !S.settings.rpe + '">Off</button><button class="' + (S.settings.rpe ? 'on' : '') + '" data-act="set-rpe" data-v="1" aria-pressed="' + !!S.settings.rpe + '">On</button></div></div>' +
+        '<div class="setting"><span class="set-label">Rest-over sound<small>A short tone when rest ends, while the app is open</small></span>' +
+          '<div class="seg"><button class="' + (S.settings.restSound === false ? 'on' : '') + '" data-act="set-rest-sound" data-v="0" aria-pressed="' + (S.settings.restSound === false) + '">Off</button><button class="' + (S.settings.restSound === false ? '' : 'on') + '" data-act="set-rest-sound" data-v="1" aria-pressed="' + (S.settings.restSound !== false) + '">On</button></div></div>' +
         '<label class="setting"><span>Bar weight (' + unit() + ')</span><input class="bar-input" data-field="bar" inputmode="decimal" autocomplete="off" value="' + U.fmtNum(barFor(unit())) + '"></label></section>';
     } else if (page === 'import') {
       body = '<section class="card"><h2 class="card-title">Past workouts</h2><p class="muted small">Choose the CSV file exported from <b>Strong</b>, <b>Hevy</b> or <b>Fitbod</b>; PR Forge works out which. Imported workouts never count as PRs, but later sessions have to beat them.</p>' +
@@ -1252,6 +1317,8 @@
     return pinButton(ex) + '<section class="card"><h2 class="card-title">Settings</h2>' +
       '<div class="setting"><span>Logged as<br><span class="muted small">' + esc(label) + '. Applies the next time you add it.</span></span>' +
       '<button class="btn ghost sm" data-act="ex-default-type" data-id="' + esc(ex.id) + '">Change</button></div>' +
+      '<div class="setting"><span>Note<br><span class="muted small">' + esc((S.settings.exerciseNotes || {})[ex.id] || 'None. Shows on the exercise while you log it.') + '</span></span>' +
+      '<button class="btn ghost sm" data-act="ex-note" data-id="' + esc(ex.id) + '" aria-label="Note for ' + esc(ex.name) + '">' + ((S.settings.exerciseNotes || {})[ex.id] ? 'Edit' : 'Add') + '</button></div>' +
       '<div class="setting"><span>Sides<br><span class="muted small">' + (sideLabel(ex) ? 'One ' + ex.side + ' at a time (' + sideLabel(ex).toLowerCase() + ')' : 'Both sides together') + '</span></span>' +
       '<button class="btn ghost sm" data-act="ex-sides" data-id="' + esc(ex.id) + '" aria-label="Change sides for ' + esc(ex.name) + '">Change</button></div>' +
       (ex.custom ? '<div class="row-2"><button class="btn ghost" data-act="custom-rename" data-id="' + esc(ex.id) + '">Edit details</button>' +
@@ -1433,6 +1500,7 @@
       '<label class="field"><span>Date</span><input type="date" data-field="edit-date" value="' + localDate(d.startedAt) + '" max="' + localDate(new Date().toISOString()) + '"></label>' +
       '<div class="field-pair"><label class="field"><span>Started</span><input type="time" data-field="edit-time" value="' + localTime(d.startedAt) + '"></label>' +
       '<label class="field"><span>Duration (min)</span><input data-field="edit-mins" inputmode="numeric" maxlength="3" autocomplete="off" placeholder="—" value="' + editMinutes(d) + '"></label></div>' +
+      '<label class="field"><span>Note</span><textarea data-field="edit-note" rows="2" maxlength="1000" placeholder="Optional">' + esc(d.note || '') + '</textarea></label>' +
       '<p class="muted small">Left a workout running? Set how long it really took. Changing the time doesn’t affect PRs.</p></section>' +
       cards +
       '<button class="btn ghost block" data-act="edit-ex-add">' + icon('plus', 'sm') + 'Add exercise</button>' +
@@ -1457,7 +1525,7 @@
     if (V.edit.minsBad) { toast('Duration: enter minutes from 1 to ' + MAX_EDIT_MINUTES, 'warn', 3500); return; }
     var d = V.edit.draft;
     // Saving with no changes keeps any PR badge, and so does changing only the time or duration.
-    var setsOnly = function (w) { return JSON.stringify(Object.assign({}, w, { startedAt: null, endedAt: null })); };
+    var setsOnly = function (w) { return JSON.stringify(Object.assign({}, w, { startedAt: null, endedAt: null, note: null })); };
     var changed = setsOnly(d) !== setsOnly(JSON.parse(V.edit.original));
     d.exercises = d.exercises.map(function (e) {
       var sets = e.sets.filter(function (s) {
@@ -1538,7 +1606,8 @@
     var dur = workoutDuration(wk) ? workoutDuration(wk).replace(/ ?(h|min)/g, '<small> $1</small>') : '—';
     var stats = '<section class="stats" aria-label="Totals">' + stat('Duration', dur) + stat('Working sets', String(M.workoutSetCount(wk))) +
       stat(wk.unit + ' volume', volNum(M.workoutVolumeLb(wk), wk.unit)) + '</section>';
-    var log = '<section class="log-list" aria-label="Sets">' + ex + '</section>';
+    var log = (wk.note ? '<section class="card"><h2 class="card-title">Note</h2><p class="wk-note-text">' + esc(wk.note) + '</p></section>' : '') +
+      '<section class="log-list" aria-label="Sets">' + ex + '</section>';
     if (isSummary) {
       return '<header class="top"><span class="eyebrow on">' + icon('check', 'sm') + 'Workout saved</span><h1 class="big">' + esc(wk.name) + '</h1>' +
         '<span class="muted">' + d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) + '</span></header>' +
@@ -1830,6 +1899,7 @@
     return '';
   }
   function markSetDone(entry, set) {
+    if (S.settings.restSound !== false) unlockSound();
     set.done = true;
     S.active.lastSetAt = new Date().toISOString();
     vibrate(12);
@@ -2255,6 +2325,7 @@
       if (i < list.length - 1) opts.push({ label: entry.superNext ? 'Unlink from the next exercise' : 'Superset with the next exercise', value: 'ex-super' });
       opts.push({ label: 'Logged as: ' + trackingLabel(kind), value: 'ex-type' });
       opts.push({ label: 'Sides: ' + (sideLabel(ex) || 'both together'), value: 'ex-sides' });
+      opts.push({ label: (S.settings.exerciseNotes && S.settings.exerciseNotes[entry.exerciseId] ? 'Edit' : 'Add') + ' a note for this exercise', value: 'ex-note' });
       if (i > 0) opts.push({ label: 'Move up', value: 'up' });
       if (i < list.length - 1) opts.push({ label: 'Move down', value: 'down' });
       if (entry.sets.length > 1) opts.push({ label: 'Remove last set', value: 'set-remove' });
@@ -2316,8 +2387,16 @@
     'tpl-menu': function (el) {
       var id = el.dataset.id, t = S.templates.filter(function (x) { return x.id === id; })[0];
       if (!t) return;
-      choiceBox(t.name, '', [{ label: 'Edit', value: 'edit' }, { label: 'Share with a friend', value: 'share' }, { label: 'Duplicate', value: 'dup' }]).then(function (v) {
+      var at = S.templates.indexOf(t), opts = [{ label: 'Edit', value: 'edit' }, { label: 'Share with a friend', value: 'share' }, { label: 'Duplicate', value: 'dup' }];
+      if (at > 0) opts.push({ label: 'Move up the list', value: 'up' });
+      if (at < S.templates.length - 1) opts.push({ label: 'Move down the list', value: 'down' });
+      choiceBox(t.name, 'The list order sets which routine comes up next when two are tied.', opts).then(function (v) {
         var target = { dataset: { id: id } };
+        if (v === 'up' || v === 'down') {
+          var j = at + (v === 'up' ? -1 : 1);
+          S.templates[at] = S.templates[j]; S.templates[j] = t;
+          commit(); return;
+        }
         if (v === 'edit') actions['template-edit'](target);
         else if (v === 'share') actions['template-share'](target);
         else if (v === 'dup') { actions['template-edit'](target); actions['template-dup'](); }
@@ -2487,6 +2566,26 @@
       }).join('') + '</div><button class="btn ghost block" data-act="modal-cancel">Cancel</button>');
     },
     'ex-sides': function (el) { closeModal(); sidesModal(el.dataset.id); },
+    'ex-note': function (el) { closeModal(); exerciseNoteModal(el.dataset.id); },
+    'ex-note-save': function (el) {
+      var t = (document.getElementById('ex-note-text').value || '').trim().slice(0, 200);
+      S.settings.exerciseNotes = S.settings.exerciseNotes || {};
+      if (t) S.settings.exerciseNotes[el.dataset.id] = t; else delete S.settings.exerciseNotes[el.dataset.id];
+      closeModal(); commit(); toast(t ? 'Note saved' : 'Note removed');
+    },
+    'wk-note': function () {
+      V.modal = { resolve: null };
+      openModal('<h2>Workout note</h2><label class="field"><span>Saved with this workout</span><textarea id="wk-note-text" rows="4" maxlength="1000" placeholder="e.g. Slept badly, cut it short">' +
+        esc(S.active.note || '') + '</textarea></label>' +
+        '<div class="modal-actions"><button class="btn ghost" data-act="modal-cancel">Cancel</button><button class="btn primary" data-act="wk-note-save">Save</button></div>');
+    },
+    'wk-note-save': function () {
+      var t = (document.getElementById('wk-note-text').value || '').trim().slice(0, 1000);
+      if (t) S.active.note = t; else delete S.active.note;
+      closeModal(); commit();
+    },
+    'recap-seen': function (el) { lsSet(RECAP_KEY, el.dataset.v); render(); },
+    'set-rest-sound': function (el) { S.settings.restSound = el.dataset.v === '1'; commit(); if (S.settings.restSound) { unlockSound(); restBeep(); } },
     'ex-side-set': function (el) {
       var id = el.dataset.id, v = el.dataset.v, base = baseExercise(id).side || '';
       S.settings.exerciseSides = S.settings.exerciseSides || {};
@@ -2721,6 +2820,8 @@
       V.exQ = el.value;
       var box = document.getElementById('ex-index');
       if (box) box.innerHTML = exerciseRowsHtml(V.exQ);
+    } else if (f === 'edit-note' && V.edit) {
+      V.edit.draft.note = el.value.slice(0, 1000);
     } else if (f === 'edit-name' && V.edit) {
       V.edit.draft.name = el.value;
     } else if (f === 'edit-date' && V.edit) {
@@ -2784,6 +2885,7 @@
         V.rest = null;
         keepRest();
         vibrate([80, 80, 80]);
+        restBeep();
         toast('Rest over — next set');
         document.querySelectorAll('.rest-dock, [data-rest-note]').forEach(function (el) { el.remove(); });
       } else {

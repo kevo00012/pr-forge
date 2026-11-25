@@ -720,3 +720,15 @@ test('starter routines only use built-in exercises, with valid rep targets (2.4.
     if (reps) assert.ok(importers.parseRepTarget(reps), reps);
   })));
 });
+
+test('library equipment filled in from names where plain; logging defaults unchanged (2.5.0)', () => {
+  const by = (n) => ex.BUILT_IN.find((e) => e.name === n);
+  assert.equal(by('Hamstring Stretch').equipment, 'Bodyweight');   // "hamstring" isn't gymnastic rings
+  assert.equal(by('IT Band and Glute Stretch').equipment, 'Bodyweight');
+  assert.equal(by('Band Assisted Pull-Up').equipment, 'Band');
+  assert.equal(by('Axle Deadlift').equipment, 'Barbell');
+  for (const n of ['Ring Dips', 'Sled Push', 'Prowler Sprint', 'Medicine Ball Chest Pass', 'Weighted Pull Ups', 'Calves-SMR']) assert.equal(by(n).equipment, 'Other', n);
+  assert.equal(by('Muscle Up').equipment, 'Bodyweight');
+  assert.equal(ex.defaultTracking(by('Muscle Up')), 'weight');      // relabelled as body weight, still logged with a weight box as before
+  assert.ok(ex.BUILT_IN.filter((e) => e.library && e.equipment === 'Other').length < 130);
+});

@@ -554,6 +554,55 @@
     };
   }
 
+  // ---------- Share codes (2.8.0) ----------
+  /** A routine as stored under a share code: names travel with IDs, and custom exercises carry their details. */
+  function routineToShare(t, exById) {
+    return { v: 1, name: String(t.name || 'Routine').slice(0, 60), exercises: t.exercises.map(function (e) {
+      var ex = exById(e.exerciseId), out = { id: e.exerciseId, name: ex.name, sets: e.sets };
+      if (e.reps) out.reps = { min: e.reps.min, max: e.reps.max };
+      if (e.superNext) out.superNext = true;
+      if (ex.custom) out.custom = { muscle: ex.muscle, equipment: ex.equipment, side: ex.side || '' };
+      return out;
+    }) };
+  }
+  /**
+   * A shared routine → { template, customs } for this person. Built-in exercises keep their IDs; others match an
+   * exercise you already have by name, else become a new custom exercise. Throws a readable Error on bad data.
+   */
+  function routineFromShare(data, exercises, uid) {
+    if (!data || typeof data !== 'object' || !Array.isArray(data.exercises) || !data.exercises.length) throw new Error('That code doesn’t hold a routine.');
+    var builtIn = {}, customs = [];
+    exercises.forEach(function (e) { if (!e.custom) builtIn[e.id] = true; });
+    var match = matcher(exercises);
+    var made = {};
+    var list = data.exercises.slice(0, 40).map(function (x) {
+      var name = String(x.name || '').trim().slice(0, 80);
+      var id = builtIn[x.id] ? x.id : (name && match(name)) || null;
+      if (!id) {
+        if (!name) return null;
+        var key = name.toLowerCase();
+        if (!made[key]) {
+          var c = x.custom || {};
+          made[key] = { id: 'c-' + uid(), name: name, muscle: String(c.muscle || 'Other'), equipment: String(c.equipment || 'Other'),
+            side: c.side === 'arm' || c.side === 'leg' ? c.side : '', custom: true };
+          customs.push(made[key]);
+        }
+        id = made[key].id;
+      }
+      var sets = Math.round(Number(x.sets));
+      var out = { exerciseId: id, sets: sets >= 1 && sets <= 20 ? sets : 3 };
+      if (x.reps && x.reps.min >= 1 && x.reps.max >= x.reps.min && x.reps.max <= 100) out.reps = { min: Math.round(x.reps.min), max: Math.round(x.reps.max) };
+      if (x.superNext) out.superNext = true;
+      return out;
+    }).filter(Boolean);
+    if (!list.length) throw new Error('That code doesn’t hold a routine.');
+    return { template: { id: 't-' + uid(), name: String(data.name || 'Shared routine').slice(0, 60), exercises: list }, customs: customs };
+  }
+  /** A typed code, tidied: letters and digits only, upper case, 6 at most. Codes never use O, 0, I or 1. */
+  function cleanShareCode(text) {
+    return String(text || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+  }
+
   /** "8", "8-12", "8–12 reps", "8 to 12" → { min, max }; anything else (AMRAP, 30s, blank) → null. */
   function parseRepTarget(text) {
     var m = String(text == null ? '' : text).trim().match(/^(\d{1,3})(?:\s*(?:-|–|—|to)\s*(\d{1,3}))?(?:\s*reps?)?$/i);
@@ -571,7 +620,7 @@
     })).concat(['', 'Shared from PR Forge, the free lifting log (no ads, no limits): https://kevo00012.github.io/pr-forge/ To add it: Routines → New → Paste or import a plan.']).join('\n');
   }
 
-  var api = { detectHistory: detectHistory, parseHistory: parseHistory, parseWhen: parseWhen, workoutsToCsv: workoutsToCsv, parseRepTarget: parseRepTarget, repTargetText: repTargetText, routineToText: routineToText, parseCsv: parseCsv, parseFitbod: parseFitbod, parseWorkoutText: parseWorkoutText, looksLikeCsv: looksLikeCsv, pdfItemsToText: pdfItemsToText, csvToPlanText: csvToPlanText };
+  var api = { routineToShare: routineToShare, routineFromShare: routineFromShare, cleanShareCode: cleanShareCode, detectHistory: detectHistory, parseHistory: parseHistory, parseWhen: parseWhen, workoutsToCsv: workoutsToCsv, parseRepTarget: parseRepTarget, repTargetText: repTargetText, routineToText: routineToText, parseCsv: parseCsv, parseFitbod: parseFitbod, parseWorkoutText: parseWorkoutText, looksLikeCsv: looksLikeCsv, pdfItemsToText: pdfItemsToText, csvToPlanText: csvToPlanText };
   root.PRF = root.PRF || {};
   root.PRF.importers = api;
   if (typeof module === 'object' && module.exports) module.exports = api;

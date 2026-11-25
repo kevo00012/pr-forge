@@ -824,3 +824,42 @@ test('notes: workout notes and exercise notes are kept, trimmed and capped; rest
   assert.equal(st.settings.restSound, true);
   assert.equal(store.normalise({ workouts: [], settings: { restSound: false } }).settings.restSound, false);
 });
+
+test('form cues: every curated exercise has 2–3 short cues; nothing else does (2.8.0)', () => {
+  const { CUES } = require('../js/cues.js');
+  const curated = ex.BUILT_IN.filter((e) => !e.library).map((e) => e.id);
+  curated.forEach((id) => { assert.ok(CUES[id], 'missing ' + id); assert.ok(CUES[id].length >= 2 && CUES[id].length <= 3, id); CUES[id].forEach((c) => assert.ok(c.length <= 110, id + ': ' + c)); });
+  Object.keys(CUES).forEach((id) => assert.ok(curated.includes(id), 'unknown id ' + id));
+});
+
+test('custom plates: only offered sizes kept, calculator and warm-ups use them (2.8.0)', () => {
+  assert.deepEqual(plates.platesFor('lb', []), [45, 35, 25, 10, 5, 2.5]);
+  assert.deepEqual(plates.platesFor('lb', [45, 25, 10, 5, 99, 45]), [45, 25, 10, 5]);
+  const noThirtyFives = plates.platesFor('lb', [45, 25, 10, 5, 2.5]);
+  assert.deepEqual(plates.calculate(205, 45, noThirtyFives).perSide, [45, 25, 10]);   // 80 per side without 35s
+  assert.deepEqual(plates.calculate(205, 45, plates.PLATES.lb).perSide, [45, 35]);
+  const ramp = plates.warmupPlan(225, 45, 'lb', [45, 25, 10]);                       // smallest 10 → 20 lb steps above the bar
+  assert.deepEqual(ramp.map((x) => x.weight), [45, 85, 125, 165]);
+  ramp.forEach((x) => assert.equal(plates.calculate(x.weight, 45, [45, 25, 10]).exact || x.weight === 45, true)); // every step loadable
+  const st = store.normalise({ workouts: [], settings: { platesLb: [45, 35, 45, 7, '10'], platesKg: [20, 0.5] } });
+  assert.deepEqual(st.settings.platesLb, [45, 35, 10]); assert.deepEqual(st.settings.platesKg, [20, 0.5]);
+});
+
+test('share codes: a routine travels with names, targets, supersets and custom exercises (2.8.0)', () => {
+  const custom = { id: 'c-9', name: 'Zercher Wiggle', muscle: 'Quads', equipment: 'Barbell', side: '', custom: true };
+  const mine = [...ex.BUILT_IN, custom];
+  const byId = (id) => mine.find((e) => e.id === id);
+  const t = { id: 't1', name: 'Legs', exercises: [{ exerciseId: 'back-squat', sets: 4, reps: { min: 5, max: 8 }, superNext: true }, { exerciseId: 'c-9', sets: 3 }] };
+  const data = JSON.parse(JSON.stringify(importers.routineToShare(t, byId)));   // as it comes back from the database
+  assert.deepEqual(data.exercises[1].custom, { muscle: 'Quads', equipment: 'Barbell', side: '' });
+  let n = 0; const uid = () => 'u' + (++n);
+  const got = importers.routineFromShare(data, ex.BUILT_IN, uid);                // the friend doesn't have the custom one
+  assert.equal(got.template.name, 'Legs');
+  assert.deepEqual(got.template.exercises[0], { exerciseId: 'back-squat', sets: 4, reps: { min: 5, max: 8 }, superNext: true });
+  assert.equal(got.customs.length, 1); assert.equal(got.customs[0].name, 'Zercher Wiggle'); assert.equal(got.customs[0].muscle, 'Quads');
+  assert.equal(got.template.exercises[1].exerciseId, got.customs[0].id);
+  const again = importers.routineFromShare(data, mine, uid);                      // someone who already has it by name
+  assert.equal(again.customs.length, 0); assert.equal(again.template.exercises[1].exerciseId, 'c-9');
+  assert.throws(() => importers.routineFromShare({ name: 'x', exercises: [] }, mine, uid), /doesn’t hold a routine/);
+  assert.equal(importers.cleanShareCode(' k7p-2qx '), 'K7P2QX');
+});

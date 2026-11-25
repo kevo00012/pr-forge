@@ -661,3 +661,62 @@ test('push / pull / legs: weekly sets and when each muscle was last trained (2.2
   assert.deepEqual(m.trainingSplit([], () => 'Chest', now), []);
   assert.equal(m.daysSince(new Date(2026, 10, 24, 23, 59).toISOString(), now), 1);
 });
+
+// ---------- Phase 2 (2.4.0): heaviest and rep-at-weight PRs, what changed ----------
+const pW = (id, date, sets, extra = {}) => ({ id, name: 'W', unit: 'lb', startedAt: date, endedAt: date, ...extra,
+  exercises: [{ id: id + 'e', exerciseId: 'bench', sets: sets.map(([w, r, warm], i) => ({ id: id + 's' + i, weight: w, reps: r, done: true, warmup: !!warm })) }] });
+
+test('PRs: heaviest weight ever and more reps at a weight count, alongside est. 1RM', () => {
+  const past = [pW('a', '2026-11-01T10:00:00Z', [[225, 10], [185, 8], [205, 5]])]; // best e1RM 300 (225x10)
+  const live = (w, r) => { const act = pW('t', '2026-11-20T10:00:00Z', [[w, r]]); act.endedAt = null; return m.checkPr(past, act, 'te', 'ts0'); };
+  assert.equal(live(230, 1).type, 'weight');                  // heaviest ever, e1RM 230 < 300
+  assert.equal(live(230, 1).previousLb, 225);
+  assert.equal(live(205, 6), null);                           // 225 x 10 earlier: 6 reps at 205+ is no record
+  assert.equal(live(205, 9), null);                           // 225 x 10 already beats 9 reps at 205+
+  assert.equal(live(225, 11).type, 'e1rm');                   // est. 1RM wins when it's a record too
+  const past2 = [pW('a', '2026-11-01T10:00:00Z', [[225, 5], [185, 8]])];
+  const live2 = (w, r) => { const act = pW('t', '2026-11-20T10:00:00Z', [[w, r]]); act.endedAt = null; return m.checkPr(past2, act, 'te', 'ts0'); };
+  assert.deepEqual(live2(185, 9) && [live2(185, 9).type, live2(185, 9).previous], ['repsAt', 8]);
+  assert.equal(live2(100, 20), null);                         // under half the heaviest: not a record
+  assert.equal(live2(185, 8), null);                          // tie isn't a record
+  const warm = pW('t', '2026-11-20T10:00:00Z', [[300, 1, true]]); warm.endedAt = null;
+  assert.equal(m.checkPr(past2, warm, 'te', 'ts0'), null);    // warm-ups never
+  const first = pW('t', '2026-11-20T10:00:00Z', [[300, 1]]); first.endedAt = null;
+  assert.equal(m.checkPr([], first, 'te', 'ts0'), null);      // first session never
+});
+
+test('PR history: heaviest and rep PRs appear once per session; imported raises the bar without a PR', () => {
+  const ws = [
+    pW('a', '2026-11-01T10:00:00Z', [[225, 5], [185, 8]]),
+    pW('b', '2026-11-05T10:00:00Z', [[185, 10], [185, 9]]),            // rep PR at 185 (10 > 8); e1RM 246.7 < 262.5? 185x10 = 246.7 < 225x5 = 262.5
+    pW('c', '2026-11-09T10:00:00Z', [[235, 1], [190, 3]]),              // heaviest (235 > 225)
+    pW('d', '2026-11-12T10:00:00Z', [[245, 1]], { imported: true }),   // imported: no PR, raises the bar
+    pW('e', '2026-11-15T10:00:00Z', [[240, 1]])                         // not heaviest any more (245 imported)
+  ];
+  assert.deepEqual(m.prEvents(ws).map((e) => [e.workoutId, e.type, e.weightLb, e.reps]), [['b', 'repsAt', 185, 10], ['c', 'weight', 235, 1]]);
+});
+
+test('what changed: top set against last time, in plain kinds', () => {
+  const ws = [
+    pW('a', '2026-11-01T10:00:00Z', [[225, 5], [225, 5]]),
+    pW('b', '2026-11-05T10:00:00Z', [[225, 6], [225, 5]]),
+    pW('c', '2026-11-09T10:00:00Z', [[235, 3]]),
+    pW('d', '2026-11-12T10:00:00Z', [[205, 8]])
+  ];
+  const k = (w) => m.sessionChanges(ws, w).map((x) => [x.kind, x.delta])[0];
+  assert.deepEqual(k(ws[0]), ['first', undefined]);
+  assert.deepEqual(k(ws[1]), ['moreReps', 1]);
+  assert.deepEqual(k(ws[2]), ['heavier', 10]);
+  assert.deepEqual(k(ws[3]), ['lighter', -30]);
+  assert.deepEqual(m.sessionChanges(ws, ws[1])[0].before, { lb: 225, reps: 5 });
+});
+
+test('starter routines only use built-in exercises, with valid rep targets (2.4.0)', () => {
+  const ids = new Set(ex.BUILT_IN.map((e) => e.id));
+  assert.equal(ex.STARTERS.length, 3);
+  ex.STARTERS.forEach((p) => p.routines.forEach((r) => r.rows.forEach(([id, sets, reps]) => {
+    assert.ok(ids.has(id), p.id + ' uses unknown ' + id);
+    assert.ok(sets >= 1 && sets <= 6);
+    if (reps) assert.ok(importers.parseRepTarget(reps), reps);
+  })));
+});

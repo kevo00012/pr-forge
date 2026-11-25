@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '2.3.1';
+  var VERSION = '2.4.0';
 
   var S = ST.load();
   var V = {
@@ -497,8 +497,9 @@
           '<button class="btn ghost" data-act="start-empty">' + icon('plus', 'sm') + 'Empty workout</button></div></section>';
       } else {
         upNext = '<section class="card hero"><span class="eyebrow on">Get started</span><h2 class="big">Make your first routine</h2>' +
-          '<p class="muted">A routine is the exercises you usually do. Build one, or paste one Claude wrote for you, then start it from here in one tap.</p>' +
-          '<button class="btn primary block" data-act="routine-new">New routine</button>' +
+          '<p class="muted">A routine is the exercises you usually do. Pick a starter plan, build your own, or paste one Claude wrote for you, then start it from here in one tap.</p>' +
+          '<button class="btn primary block" data-act="starter-pick">Pick a starter plan</button>' +
+          '<button class="btn ghost block" data-act="routine-new">Build or paste my own</button>' +
           '<button class="btn ghost block" data-act="start-empty">Start an empty workout</button></section>';
       }
     }
@@ -540,6 +541,26 @@
     return '<div class="stat"><span class="stat-v' + (cls ? ' ' + cls : '') + '">' + value + '</span><span class="stat-l">' + label + '</span></div>';
   }
 
+  /** Starter plans: pick one and its routines are added as ordinary routines you can change. */
+  function pickStarter() {
+    choiceBox('Starter plans', 'Starting points with sets and rep targets. They become normal routines: change, rename or delete anything.',
+      EX.STARTERS.map(function (p) { return { label: p.name + ' · ' + p.hint, value: p.id }; })).then(function (id) {
+      var plan = EX.STARTERS.filter(function (p) { return p.id === id; })[0];
+      if (!plan) return;
+      plan.routines.forEach(function (r) {
+        S.templates.push({ id: 't-' + uid(), name: r.name, exercises: r.rows.map(function (row) {
+          var x = { exerciseId: row[0], sets: row[1] }, tg = row[2] ? IM.parseRepTarget(row[2]) : null;
+          if (tg) x.reps = tg;
+          return x;
+        }) });
+      });
+      V.tab = 'workouts'; V.screen = null;
+      commit();
+      var names = plan.routines.map(function (r) { return r.name; });
+      toast('Added ' + (names.length > 1 ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] : names[0]), '', 3000);
+    });
+  }
+
   // ----- Workouts (templates) -----
   function viewWorkouts() {
     var list = S.templates.map(function (t) {
@@ -554,7 +575,7 @@
         '<button class="btn primary block" data-act="start-template" data-id="' + esc(t.id) + '">Start</button></section>';
     }).join('');
     if (!list) {
-      list = '<section class="card empty"><p>No routines yet.</p><p class="muted small">A routine is a list of exercises and how many sets you do of each. Starting one fills in last time’s numbers as hints. Tap New to build one, paste one, or start an empty workout.</p></section>';
+      list = '<section class="card empty"><p>No routines yet.</p><p class="muted small">A routine is a list of exercises and how many sets you do of each. Starting one fills in last time’s numbers as hints. Tap New to build one, paste one, or start an empty workout.</p><button class="btn ghost block" data-act="starter-pick">Use a starter plan</button></section>';
     }
     return '<header class="top row"><h1>Routines</h1><div class="top-tools"><button class="btn primary sm" data-act="routine-new">' + icon('plus', 'sm') + 'New</button>' + settingsButton() + '</div></header>' +
       list;
@@ -636,12 +657,7 @@
         rows +
         '<div class="ex-actions"><button class="btn ghost sm" data-act="set-add" data-e="' + entry.id + '">' + icon('plus', 'sm') + 'Add set</button>' +
         (kind === 'weight' || kind === 'weighted' ? '<button class="btn ghost sm" data-act="warmup-add" data-e="' + entry.id + '">' + icon('plus', 'sm') + 'Warm-up</button>' : '') +
-        (entry.sets.length > 1 ? '<button class="btn ghost sm" data-act="set-remove" data-e="' + entry.id + '">Remove last set</button>' : '') +
-        '<button class="btn ghost sm" data-act="ex-swap" data-e="' + entry.id + '">Swap</button>' +
-        (a.exercises[a.exercises.length - 1] !== entry ? '<button class="btn ghost sm" data-act="ex-super" data-e="' + entry.id + '" aria-pressed="' + !!entry.superNext + '">' + (entry.superNext ? 'Unlink next' : 'Superset with next') + '</button>' : '') +
-        '<button class="btn ghost sm" data-act="ex-type" data-e="' + entry.id + '" aria-label="Logging type: ' + trackingLabel(kind) + '. Tap to change">' + trackingLabel(kind) + '</button>' +
-        '<button class="icon-btn boxed" data-act="ex-move" data-e="' + entry.id + '" data-d="-1" aria-label="Move ' + esc(ex.name) + ' up"' + (a.exercises[0] === entry ? ' disabled' : '') + '>' + icon('up', 'sm') + '</button>' +
-        '<button class="icon-btn boxed" data-act="ex-move" data-e="' + entry.id + '" data-d="1" aria-label="Move ' + esc(ex.name) + ' down"' + (a.exercises[a.exercises.length - 1] === entry ? ' disabled' : '') + '>' + icon('down', 'sm') + '</button>' +
+        '<button class="btn ghost sm ex-more" data-act="ex-more" data-e="' + entry.id + '" aria-haspopup="dialog" aria-label="More for ' + esc(ex.name) + ': swap, superset, logging type, move, remove a set">' + icon('more', 'sm') + 'More</button>' +
         '</div></section>';
     }).join('');
 
@@ -684,6 +700,15 @@
     var id = entry.exerciseId;
     var hist = M.sessionsFor(S.workouts, id, S.active.id);
     var m = { name: ex.name, side: sideLabel(ex), unit: u, type: pr.type, weight: set.weight, reps: set.reps, note: '' };
+    if (pr.type === 'weight' || pr.type === 'repsAt') {
+      // Heaviest ever: each session's heaviest set. Reps at a weight: each session's most reps at that weight or more.
+      var per = pr.type === 'weight' ? function (s) { return s.topWeightLb; } : function (s) { return M.repsAtOrAbove(s.weightSets, pr.weightLb); };
+      var recentW = hist.filter(function (s) { return per(s) > 0; }).slice(-7);
+      m.values = recentW.map(per).concat(pr.type === 'weight' ? pr.weightLb : pr.reps);
+      m.from = recentW.length ? recentW[0].date : null;
+      m.previousLb = pr.previousLb; m.previous = pr.previous; m.weightLb = pr.weightLb;
+      return m;
+    }
     if (pr.type !== 'e1rm') {
       var pick = function (s) { return pr.type === 'seconds' ? s.maxSeconds : s.maxBwReps; };
       hist = hist.filter(function (s) { return pick(s) > 0; }).slice(-7);
@@ -718,21 +743,30 @@
 
   function viewPrMoment() {
     var m = V.prMoment;
-    var isE = m.type === 'e1rm';
+    var isE = m.type === 'e1rm' || m.type === 'weight' || m.type === 'repsAt'; // a weight × reps set
     var main = isE ? U.fmtNum(m.weight) : String(m.count);
     var sub = isE ? '<span>' + m.unit + '</span><span>× ' + m.reps + '</span>' : '<span>' + m.countUnit + '</span>';
-    var grid = isE
+    var wAt = m.weightLb ? U.fmtNum(U.fromLb(m.weightLb, m.unit)) + ' ' + m.unit : '';
+    var grid = m.type === 'weight'
+      ? '<div class="pr-grid"><div><strong>Heaviest</strong><span>Most weight you’ve moved on this lift</span></div>' +
+        '<div><strong>+' + U.fmtWeightLb(m.weightLb - m.previousLb, m.unit) + '</strong><span>Over your heaviest of ' + U.fmtNum(U.fromLb(m.previousLb, m.unit)) + '</span></div></div>'
+      : m.type === 'repsAt'
+      ? '<div class="pr-grid"><div><strong>+' + (m.reps - m.previous) + ' rep' + (m.reps - m.previous === 1 ? '' : 's') + '</strong><span>At ' + wAt + ' or more</span></div>' +
+        '<div><strong>' + m.previous + '</strong><span>Your most reps there before</span></div></div>'
+      : m.type === 'e1rm'
       ? '<div class="pr-grid"><div><strong>' + U.fmtWeightLb(m.e1rmLb, m.unit) + '</strong><span>Estimated 1-rep max</span></div>' +
         '<div><strong>+' + U.fmtWeightLb(m.e1rmLb - m.previousLb, m.unit) + '</strong><span>Over your best of ' + U.fmtNum(U.fromLb(m.previousLb, m.unit)) + '</span></div></div>'
       : '<div class="pr-grid one"><div><strong>+' + (m.count - m.previous) + ' ' + m.countUnit + '</strong><span>Over your best of ' + m.previous + '</span></div></div>';
-    var display = m.values.map(function (v) { return isE ? U.fmtNum(U.fromLb(v, m.unit)) : String(v); });
+    var display = m.values.map(function (v) { return m.type === 'e1rm' || m.type === 'weight' ? U.fmtNum(U.fromLb(v, m.unit)) : String(v); });
+    var chartTitle = m.type === 'weight' ? 'Heaviest set each session' : m.type === 'repsAt' ? 'Most reps at ' + wAt + '+' : 'Best set each session';
+    var chartUnit = m.type === 'e1rm' ? 'est. 1RM, ' + m.unit : m.type === 'weight' ? m.unit : m.type === 'repsAt' ? 'reps' : m.countUnit;
     return '<div class="pr-moment" role="dialog" aria-modal="true" aria-label="New personal record">' +
       '<section class="pr-panel"><div class="pr-panel-top"><span class="pr-kicker">' + icon('trophy') + 'New personal record</span>' +
       '<button class="pr-close" data-act="pr-close" aria-label="Close">' + icon('close', 'sm') + '</button></div>' +
       '<h1 class="pr-name">' + esc(m.name) + '</h1>' + (m.side ? '<span class="pr-side">' + m.side + '</span>' : '') +
       '<p class="pr-num' + (main.length > 4 ? ' long' : '') + '"><span class="pr-num-main">' + main + '</span><span class="pr-num-sub">' + sub + '</span></p>' +
       grid + '</section>' +
-      '<section class="pr-chart" aria-label="Recent sessions"><div class="pr-chart-head"><h2 class="card-title">Best set each session</h2><span>' + (isE ? 'est. 1RM, ' + m.unit : m.countUnit) + '</span></div>' +
+      '<section class="pr-chart" aria-label="Recent sessions"><div class="pr-chart-head"><h2 class="card-title">' + chartTitle + '</h2><span>' + chartUnit + '</span></div>' +
       bars(m.values, 'last-accent', 'Last ' + m.values.length + ' sessions: ' + display.join(', ') + ', the last one today', true) +
       '<div class="pr-chart-foot"><span>' + (m.from ? new Date(m.from).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '') + '</span><strong>Today</strong></div>' +
       (m.note ? '<p class="pr-note">' + m.note + '</p>' : '') + '</section>' +
@@ -1480,7 +1514,7 @@
         var isPr = false;
         if (evt && !marked && !s.warmup) {
           isPr = evt.type === 'seconds' ? Number(s.seconds) === evt.seconds
-            : Number(s.reps) === evt.reps && (evt.type === 'e1rm' ? Math.abs(U.toLb(s.weight, wk.unit) - evt.weightLb) < 0.01 : !(Number(s.weight) > 0));
+            : Number(s.reps) === evt.reps && (evt.weightLb ? Math.abs(U.toLb(s.weight, wk.unit) - evt.weightLb) < 0.01 : !(Number(s.weight) > 0));
           marked = isPr;
         }
         return '<span class="set-chip' + (s.warmup ? ' warm' : '') + (isPr ? ' is-pr' : '') + '">' + (s.warmup ? 'W ' : '') + setText(s) + '</span>';
@@ -1489,7 +1523,7 @@
       var meta = (volLb > 0 ? U.fmtVolumeLb(volLb, wk.unit) : working + ' set' + (working === 1 ? '' : 's')) + (side ? ' · ' + side : '');
       return '<div class="log"><div class="log-head"><h2 class="h-lift">' + esc(e.name) + '</h2><span class="log-vol">' + meta + '</span></div><div class="set-chips">' + sets + '</div></div>';
     }).join('');
-    var wins = Object.keys(prByEx).map(function (id) { return prWin(wk, prByEx[id]); }).join('');
+    var wins = Object.keys(prByEx).map(function (id) { return prWin(wk, prByEx[id]); }).join('') + changesHtml(wk);
     var d = new Date(wk.startedAt);
     var dur = workoutDuration(wk) ? workoutDuration(wk).replace(/ ?(h|min)/g, '<small> $1</small>') : '—';
     var stats = '<section class="stats" aria-label="Totals">' + stat('Duration', dur) + stat('Working sets', String(M.workoutSetCount(wk))) +
@@ -1510,8 +1544,34 @@
       '<button class="btn ghost block" data-act="history-to-template">Save as routine</button>' +
       '<button class="btn danger-ghost block" data-act="history-delete">Delete this workout</button></div>';
   }
+  /** "Compared with last time": one plain line per exercise, from the logged sets only. */
+  function changesHtml(wk) {
+    var u = wk.unit, rows = M.sessionChanges(S.workouts, wk);
+    var w = function (lb) { return U.fmtNum(U.fromLb(lb, u)); };
+    var set = function (x) { return x.seconds ? x.seconds + ' sec' : x.lb ? w(x.lb) + ' × ' + x.reps : x.reps + ' reps'; };
+    var plural = function (n, one) { return Math.abs(n) + ' ' + one + (Math.abs(n) === 1 ? '' : 's'); };
+    var lines = rows.filter(function (r) { return r.kind !== 'first' && r.kind !== 'other'; }).map(function (r) {
+      var text, up = false;
+      if (r.kind === 'heavier') { text = '+' + w(r.delta) + ' ' + u + ' on your top set'; up = true; }
+      else if (r.kind === 'lighter') text = w(-r.delta) + ' ' + u + ' lighter top set';
+      else if (r.kind === 'moreReps') { text = '+' + plural(r.delta, 'rep') + ' at ' + w(r.now.lb) + ' ' + u; up = true; }
+      else if (r.kind === 'fewerReps') text = plural(r.delta, 'rep') + ' fewer at ' + w(r.now.lb) + ' ' + u;
+      else if (r.kind === 'same') text = 'Matched last time';
+      else if (r.kind === 'seconds') { text = r.delta > 0 ? '+' + r.delta + ' sec on your longest hold' : r.delta < 0 ? -r.delta + ' sec shorter longest hold' : 'Matched last time'; up = r.delta > 0; }
+      else if (r.kind === 'assist') { text = r.delta < 0 ? w(-r.delta) + ' ' + u + ' less help' : r.delta > 0 ? w(r.delta) + ' ' + u + ' more help' : 'Same help as last time'; up = r.delta < 0; }
+      else if (r.kind === 'reps') { text = r.delta > 0 ? '+' + plural(r.delta, 'rep') + ' on your best set' : r.delta < 0 ? plural(r.delta, 'rep') + ' fewer on your best set' : 'Matched last time'; up = r.delta > 0; }
+      return '<li class="chg-row"><span class="chg-name">' + esc(exById(r.exerciseId).name) + '</span><span class="chg-text' + (up ? ' up' : '') + '">' + text + '</span>' +
+        '<span class="chg-sets">' + set(r.now) + ' <small>vs ' + set(r.before) + '</small></span></li>';
+    });
+    if (!lines.length) return '';
+    return '<section class="card" aria-label="Compared with last time"><h2 class="card-title">Compared with last time</h2><ul class="chg-list">' + lines.join('') + '</ul>' +
+      '<p class="muted small">Each exercise’s top set against the last session you did it. Warm-ups don’t count.</p></section>';
+  }
   function prWin(wk, evt) {
     var detail = evt.type === 'seconds' ? evt.seconds + ' sec' : evt.reps + ' reps';
+    var setW = evt.weightLb ? U.fmtNum(U.fromLb(evt.weightLb, wk.unit)) + ' × ' + evt.reps : '';
+    if (evt.type === 'weight') detail = setW + ' · heaviest ever' + (evt.previousLb ? ' (+' + U.fmtNum(U.fromLb(evt.weightLb - evt.previousLb, wk.unit)) + ' ' + wk.unit + ')' : '');
+    if (evt.type === 'repsAt') detail = setW + ' · +' + (evt.reps - evt.previous) + ' rep' + (evt.reps - evt.previous === 1 ? '' : 's') + ' at ' + U.fmtNum(U.fromLb(evt.weightLb, wk.unit)) + ' ' + wk.unit + ' or more';
     if (evt.type === 'e1rm') {
       var prior = 0;
       M.sessionsFor(S.workouts, evt.exerciseId).forEach(function (s) {
@@ -2145,6 +2205,24 @@
       if (entry.sets.some(function (s) { return s.done; })) confirmBox('Remove ' + name + '?', 'Its confirmed sets will be removed from this workout.', 'Remove', true).then(function (ok) { if (ok) go(); });
       else go();
     },
+    // The less-used actions for one exercise, in one sheet: each runs the same action its old button did.
+    'ex-more': function (el) {
+      var entry = findEntry(el.dataset.e); if (!entry) return;
+      var list = S.active.exercises, i = list.indexOf(entry), kind = entryKind(entry);
+      var ex = exById(entry.exerciseId);
+      var opts = [{ label: 'Swap exercise', value: 'ex-swap' }];
+      if (i < list.length - 1) opts.push({ label: entry.superNext ? 'Unlink from the next exercise' : 'Superset with the next exercise', value: 'ex-super' });
+      opts.push({ label: 'Logged as: ' + trackingLabel(kind), value: 'ex-type' });
+      opts.push({ label: 'Sides: ' + (sideLabel(ex) || 'both together'), value: 'ex-sides' });
+      if (i > 0) opts.push({ label: 'Move up', value: 'up' });
+      if (i < list.length - 1) opts.push({ label: 'Move down', value: 'down' });
+      if (entry.sets.length > 1) opts.push({ label: 'Remove last set', value: 'set-remove' });
+      choiceBox(ex.name, '', opts).then(function (v) {
+        if (!v) return;
+        var target = { dataset: { e: entry.id, id: entry.exerciseId, d: v === 'up' ? '-1' : '1' } };
+        actions[v === 'up' || v === 'down' ? 'ex-move' : v](target);
+      });
+    },
     'ex-super': function (el) {
       var entry = findEntry(el.dataset.e); if (!entry) return;
       entry.superNext = !entry.superNext;
@@ -2458,13 +2536,16 @@
       choiceBox('New routine', '', [
         { label: 'Build from scratch', value: 'scratch', cls: 'primary' },
         { label: 'Paste or import a plan (text, PDF, CSV)', value: 'paste' },
+        { label: 'Use a starter plan (Push/Pull/Legs and more)', value: 'starter' },
         { label: 'Start an empty workout instead', value: 'empty' }
       ]).then(function (v) {
+        if (v === 'starter') { pickStarter(); return; }
         if (v === 'scratch') { V.tplDraft = { id: null, name: '', exercises: [] }; V.screen = 'template'; render(); }
         else if (v === 'paste') { V.planFileName = ''; pastePlanForm(V.planText || ''); }
         else if (v === 'empty') startWorkout('Workout', null, []);
       });
     },
+    'starter-pick': function () { pickStarter(); },
     'plan-paste': function () { V.planFileName = ''; pastePlanForm(V.planText || ''); },
     'plan-copy-tip': function () {
       var tip = 'Write it as a plain list, one exercise per line, like "Bench press 4x8". Put the workout name on its own line above.';

@@ -322,6 +322,56 @@
     });
   }
 
+  /** Muscles grouped the way most splits are: push, pull, legs, then everything else. */
+  var MUSCLE_GROUPS = [
+    { id: 'push', name: 'Push', muscles: ['Chest', 'Shoulders', 'Triceps'] },
+    { id: 'pull', name: 'Pull', muscles: ['Back', 'Biceps', 'Forearms'] },
+    { id: 'legs', name: 'Legs', muscles: ['Quads', 'Hamstrings', 'Glutes', 'Calves'] },
+    { id: 'core', name: 'Core & other', muscles: ['Core', 'Full body', 'Other'] }
+  ];
+  /** Whole calendar days between a date and now (0 = today). */
+  function daysSince(iso, now) {
+    var a = new Date(iso); a.setHours(0, 0, 0, 0);
+    var b = new Date(now || new Date()); b.setHours(0, 0, 0, 0);
+    return Math.max(0, Math.round((b - a) / 864e5));
+  }
+  /**
+   * Push / pull / legs at a glance: for each group and each muscle in it, working sets this week and last week
+   * (as setsByMuscle) and the date it was last trained (latest finished workout with a working set for it).
+   * Only muscles you've ever trained are listed; groups with none are left out. By each exercise's main muscle only.
+   * This is a record of what you did, not an estimate of recovery.
+   */
+  function trainingSplit(workouts, muscleOf, now) {
+    var weekly = {};
+    setsByMuscle(workouts, muscleOf, now).forEach(function (r) { weekly[r.muscle] = r; });
+    var last = {};
+    finished(workouts || []).forEach(function (w) {
+      w.exercises.forEach(function (e) {
+        if (!e.sets.some(isWorkingSet)) return;
+        var m = muscleOf(e.exerciseId) || 'Other';
+        if (!last[m] || w.startedAt > last[m]) last[m] = w.startedAt;
+      });
+    });
+    var known = {};
+    MUSCLE_GROUPS.forEach(function (g) { g.muscles.forEach(function (m) { known[m] = g.id; }); });
+    Object.keys(last).forEach(function (m) { if (!known[m]) known[m] = 'core'; });
+    return MUSCLE_GROUPS.map(function (g) {
+      var names = Object.keys(known).filter(function (m) { return known[m] === g.id && last[m]; });
+      names.sort(function (a, b) { var ia = g.muscles.indexOf(a), ib = g.muscles.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || (a < b ? -1 : 1); });
+      var muscles = names.map(function (m) {
+        var wk = weekly[m] || { thisWeek: 0, lastWeek: 0 };
+        return { muscle: m, thisWeek: wk.thisWeek, lastWeek: wk.lastWeek, last: last[m], days: daysSince(last[m], now) };
+      });
+      if (!muscles.length) return null;
+      var latest = muscles.reduce(function (a, x) { return !a || x.last > a ? x.last : a; }, null);
+      return {
+        id: g.id, name: g.name, muscles: muscles, last: latest, days: daysSince(latest, now),
+        thisWeek: muscles.reduce(function (n, x) { return n + x.thisWeek; }, 0),
+        lastWeek: muscles.reduce(function (n, x) { return n + x.lastWeek; }, 0)
+      };
+    }).filter(Boolean);
+  }
+
   function weeklySeries(workouts, now, weeks) {
     var count = weeks || 8;
     var thisWeek = startOfWeek(now || new Date());
@@ -588,7 +638,7 @@
     workoutFrequency: workoutFrequency,
     lastSessionFor: lastSessionFor,
     hintFor: hintFor,
-    hintForSet: hintForSet, setsByMuscle: setsByMuscle, progressionFor: progressionFor,
+    hintForSet: hintForSet, setsByMuscle: setsByMuscle, trainingSplit: trainingSplit, MUSCLE_GROUPS: MUSCLE_GROUPS, daysSince: daysSince, progressionFor: progressionFor,
     strengthTotal: strengthTotal,
     E1RM_MAX_REPS: E1RM_MAX_REPS,
     suggestNext: suggestNext

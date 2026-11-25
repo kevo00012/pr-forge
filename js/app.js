@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '2.1.0';
+  var VERSION = '2.2.0';
 
   var S = ST.load();
   var V = {
@@ -515,9 +515,9 @@
       stat(prLabel, String(sum.prs.length)) +
       '</section>';
 
-    return '<header class="top row end"><div class="top"><p class="eyebrow">' + now.toLocaleDateString('en-US', { weekday: 'long' }) + ' · ' + now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + '</p><h1>Today</h1></div>' +
+    return '<header class="top row end"><div class="top"><p class="eyebrow">' + now.toLocaleDateString('en-US', { weekday: 'short' }) + ' · ' + now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + '</p><h1>Today</h1></div>' +
       '<div class="top-tools"><img class="wordmark-img" src="icons/wordmark.png" width="136" height="16" alt="PR Forge">' + settingsButton() + '</div></header>' +
-      '<section class="week-wrap" aria-label="This week"><div class="week">' + strip + '</div><p class="week-line">' + weekLine + '</p></section>' +
+      '<section class="week-wrap" aria-label="This week"><div class="week">' + strip + '</div><p class="week-line">' + weekLine + '</p>' + splitStrip() + '</section>' +
       upNext + highlights + backupNudge();
   }
   // ----- Backup file reminder -----
@@ -1113,19 +1113,45 @@
   }
 
   /** Working sets per muscle group, this week so far vs last week. Plain counts; no "ideal" ranges. */
+  /** "today", "yesterday", "3 days ago"; past a month, "over a month ago". */
+  function agoWords(days) {
+    return days <= 0 ? 'today' : days === 1 ? 'yesterday' : days <= 30 ? days + ' days ago' : 'over a month ago';
+  }
+  function agoShort(days) { return days <= 0 ? 'today' : days > 30 ? '30d+' : days + 'd'; }
+  function trainingSplit() { return M.trainingSplit(S.workouts, function (id) { return exById(id).muscle; }, new Date()); }
+  /**
+   * Push · Pull · Legs: working sets this week vs last week and when each muscle was last trained, grouped by split.
+   * A record of what you did, not a recovery estimate (the app never guesses how recovered a muscle is).
+   */
   function muscleCard() {
-    var rows = M.setsByMuscle(S.workouts, function (id) { return exById(id).muscle; }, new Date());
-    if (!rows.length) return '';
-    var max = Math.max.apply(null, rows.map(function (r) { return Math.max(r.thisWeek, r.lastWeek); })) || 1;
-    var list = rows.map(function (r) {
-      return '<li class="mus-row"><span class="mus-name">' + esc(r.muscle) + '</span>' +
-        '<span class="mus-track" aria-hidden="true"><span class="mus-last" style="width:' + (100 * r.lastWeek / max).toFixed(1) + '%"></span>' +
-        '<span class="mus-now" style="width:' + (100 * r.thisWeek / max).toFixed(1) + '%"></span></span>' +
-        '<span class="mus-num" aria-label="' + r.thisWeek + ' sets this week, ' + r.lastWeek + ' last week">' + r.thisWeek + '<small> / ' + r.lastWeek + '</small></span></li>';
+    var groups = trainingSplit();
+    if (!groups.length) return '';
+    var all = [];
+    groups.forEach(function (g) { all = all.concat(g.muscles); });
+    var max = Math.max.apply(null, all.map(function (r) { return Math.max(r.thisWeek, r.lastWeek); })) || 1;
+    var html = groups.map(function (g) {
+      var rows = g.muscles.map(function (r) {
+        return '<li class="mus-row ppl"><span class="mus-name">' + esc(r.muscle) + '</span>' +
+          '<span class="mus-track" aria-hidden="true"><span class="mus-last" style="width:' + (100 * r.lastWeek / max).toFixed(1) + '%"></span>' +
+          '<span class="mus-now" style="width:' + (100 * r.thisWeek / max).toFixed(1) + '%"></span></span>' +
+          '<span class="mus-num" aria-label="' + r.thisWeek + ' sets this week, ' + r.lastWeek + ' last week">' + r.thisWeek + '<small> / ' + r.lastWeek + '</small></span>' +
+          '<span class="mus-ago" aria-label="last trained ' + agoWords(r.days) + '">' + agoShort(r.days) + '</span></li>';
+      }).join('');
+      return '<div class="ppl-group"><div class="ppl-head"><strong>' + g.name + '</strong><span class="muted small">Last trained ' + agoWords(g.days) + '</span>' +
+        '<span class="mus-num" aria-label="' + g.thisWeek + ' sets this week, ' + g.lastWeek + ' last week">' + g.thisWeek + '<small> / ' + g.lastWeek + '</small></span></div>' +
+        '<ul class="mus-list">' + rows + '</ul></div>';
     }).join('');
-    return '<section class="card" aria-label="Sets per muscle"><div class="pr-chart-head"><h2 class="card-title">Sets per muscle</h2><span class="muted small">this week / last week</span></div>' +
-      '<ul class="mus-list">' + list + '</ul>' +
-      '<p class="muted small">Working sets from Monday, by each exercise’s main muscle. Warm-ups don’t count. The faint bar is last week.</p></section>';
+    return '<section class="card" aria-label="Push, pull, legs"><div class="pr-chart-head"><h2 class="card-title">Push · Pull · Legs</h2><span class="muted small">sets: this week / last</span></div>' +
+      html +
+      '<p class="muted small">Working sets from Monday by each exercise’s main muscle (bench press counts for chest); the faint bar is last week. The right column is days since you last trained it: what you did, not a guess at recovery.</p></section>';
+  }
+  /** Today: one line showing when push, pull and legs were last trained, to help pick the next workout. */
+  function splitStrip() {
+    var groups = trainingSplit().filter(function (g) { return g.id !== 'core'; });
+    if (!groups.length) return '';
+    return '<div class="ppl-strip" aria-label="Last trained">' + groups.map(function (g) {
+      return '<span class="ppl-chip"><b>' + g.name + '</b><span>' + agoWords(g.days) + '</span></span>';
+    }).join('') + '</div>';
   }
 
   /** One lift over time. Tap-free on purpose: the session list below it holds the same numbers. */

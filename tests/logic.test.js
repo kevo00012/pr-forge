@@ -642,3 +642,22 @@ test('exercise sides: your choice is kept, bad values dropped (2.0.1)', () => {
   assert.deepEqual(st.settings.exerciseSides, { 'hammer-curl': 'arm', 'db-row': 'both', y: 'leg' });
   assert.deepEqual(store.normalise({ workouts: [] }).settings.exerciseSides, {});
 });
+
+test('push / pull / legs: weekly sets and when each muscle was last trained (2.2.0)', () => {
+  const now = new Date(2026, 10, 25, 12); // Wednesday
+  const wk = (date, list, done = true) => ({ startedAt: date.toISOString(), endedAt: done ? date.toISOString() : null, unit: 'lb',
+    exercises: list.map(([id, n, warm]) => ({ exerciseId: id, sets: Array(n).fill(0).map(() => ({ weight: 100, reps: 5, done: true, warmup: !!warm })) })) });
+  const muscle = { bench: 'Chest', ohp: 'Shoulders', row: 'Back', squat: 'Quads', plank: 'Core', odd: 'Neck' };
+  const split = m.trainingSplit([
+    wk(new Date(2026, 10, 24, 18), [['bench', 4], ['ohp', 3]]),   // yesterday: push
+    wk(new Date(2026, 10, 18, 18), [['row', 4], ['bench', 2]]),   // last week
+    wk(new Date(2026, 10, 10, 18), [['squat', 5], ['odd', 2]]),   // 15 days ago
+    wk(new Date(2026, 10, 25, 9), [['squat', 1, true]]),          // warm-up only: doesn't count
+    wk(new Date(2026, 10, 25, 10), [['plank', 3]], false)         // unfinished: doesn't count
+  ], (id) => muscle[id], now);
+  assert.deepEqual(split.map((g) => [g.id, g.thisWeek, g.lastWeek, g.days]), [['push', 7, 2, 1], ['pull', 0, 4, 7], ['legs', 0, 0, 15], ['core', 0, 0, 15]]);
+  assert.deepEqual(split[0].muscles.map((x) => [x.muscle, x.thisWeek, x.days]), [['Chest', 4, 1], ['Shoulders', 3, 1]]);
+  assert.deepEqual(split[3].muscles.map((x) => x.muscle), ['Neck']);   // unknown muscles go to Core & other
+  assert.deepEqual(m.trainingSplit([], () => 'Chest', now), []);
+  assert.equal(m.daysSince(new Date(2026, 10, 24, 23, 59).toISOString(), now), 1);
+});

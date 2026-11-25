@@ -9,6 +9,11 @@
 
   var SUPABASE_URL = 'https://pvtcqdtqycihlontmirl.supabase.co';
   var SUPABASE_KEY = 'sb_publishable_00yYlGDJceDwbjp_B25oLg_FOEW6ZwE';
+  // Google sign-in direct (2.3.0): the app asks Google itself, so Google's page names this site instead of the
+  // Supabase server, then hands Google's ID token to Supabase (signInWithIdToken). The "PR Forge web" OAuth client ID
+  // is public (it's in the sign-in address). Empty = the older Supabase redirect sign-in, which still works and stays
+  // available as a fallback on the sign-in screen. Needs this site's address in the client's Authorized redirect URIs.
+  var GOOGLE_CLIENT_ID = '';
 
   var ST = root.PRF.store, SY = root.PRF.sync;
   var META_KEY = ST.KEY + ':sync';
@@ -24,9 +29,17 @@
   // Handover: on iPhone, Google sign-in from the home-screen app can finish in a browser sheet that has its own
   // storage. The app makes a one-time secret (nonce) and passes it in the return address; the sheet hands the
   // sign-in to the app through the database under that secret, and the app collects it when you come back.
-  var RETURN_NONCE = (/[?&]h=([0-9a-f]{32,128})(?:&|$)/.exec(location.search) || [])[1] || '';
+  // A direct Google sign-in comes back as #id_token=…&state=g.<handover code>.<raw nonce> (or #error=…&state=…).
+  var HASH = {};
+  location.hash.slice(1).split('&').forEach(function (kv) {
+    var i = kv.indexOf('=');
+    if (i > 0) { try { HASH[decodeURIComponent(kv.slice(0, i))] = decodeURIComponent(kv.slice(i + 1).replace(/\+/g, ' ')); } catch (e) { /* ignore */ } }
+  });
+  var GSTATE = /^g\.([0-9a-f]{32,128})\.([0-9a-f]{32,128})$/.exec(HASH.state || '');
+  var GOOGLE_RETURN = !!GSTATE && !!(HASH.id_token || HASH.error);
+  var RETURN_NONCE = (/[?&]h=([0-9a-f]{32,128})(?:&|$)/.exec(location.search) || [])[1] || (GSTATE ? GSTATE[1] : '');
   // Remembered at load: supabase-js clears the tokens from the address before our listener runs.
-  var WAS_RETURN = /[?&](code|error|h)=/.test(location.search) || /(access_token|error)=/.test(location.hash);
+  var WAS_RETURN = /[?&](code|error|h)=/.test(location.search) || /(access_token|error)=/.test(location.hash) || GOOGLE_RETURN;
   // The address as it arrived, with values hidden (keys only), e.g. "/pr-forge/?h=… #access_token,expires_in,…".
   var ARRIVED = location.pathname + (location.search ? '?' + location.search.slice(1).split('&').map(function (kv) {
     var k = kv.split('=')[0]; return k === 'h' ? 'h=' + (kv.split('=')[1] || '').slice(0, 6) + '…' : k;
@@ -53,7 +66,14 @@
     return standalone ? 'the home-screen app' : 'the browser';
   }
   /** True when Google has just sent someone back (tokens or an error in the address). */
-  function isReturn() { return /[?&](code|error|h)=/.test(location.search) || /(access_token|error)=/.test(location.hash); }
+  function isReturn() { return /[?&](code|error|h)=/.test(location.search) || /(access_token|error|id_token)=/.test(location.hash); }
+  function sha256hex(text) {
+    return root.crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)).then(function (buf) {
+      return Array.prototype.map.call(new Uint8Array(buf), function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
+    });
+  }
+  /** This page's own address as registered with Google (no query, no "index.html"). */
+  function returnAddress() { return location.origin + location.pathname.replace(/index\.html$/, ''); }
   function cleanUrl() {
     if (isReturn()) {
       try { history.replaceState(null, '', location.pathname); } catch (e) { /* ignore */ }
@@ -64,7 +84,8 @@
     if (session || handingOff || handedOff || !isReturn()) return;
     var started = null;
     try { started = JSON.parse(localStorage.getItem(STARTED_KEY) || 'null'); } catch (e) { /* ignore */ }
-    if (err && /fetch|network|load failed/i.test(String(err.message))) failure = 'Sign-in didn’t finish: couldn’t reach the sign-in server. Check your connection and try again.';
+    if (failure) { /* already explained, e.g. cancelled at Google */ }
+    else if (err && /fetch|network|load failed/i.test(String(err.message))) failure = 'Sign-in didn’t finish: couldn’t reach the sign-in server. Check your connection and try again.';
     else if (err && err.message) failure = 'Sign-in didn’t finish: ' + err.message + '.';
     else if (!started) failure = 'Sign-in started somewhere else, so it can’t finish in ' + where() + '. Tap Continue with Google again from here.';
     else failure = 'Sign-in started in ' + started.where + ' and came back to ' + where() + ', but it couldn’t finish. Tap Continue with Google to try again.';
@@ -260,7 +281,19 @@
           flowType: 'implicit', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true
         }
       });
-      if (isReturn()) {
+      if (GOOGLE_RETURN) {
+        // Back from Google with an ID token: exchange it for a Supabase session. The session then arrives through
+        // onAuthStateChange below, exactly like the older sign-in (including the iPhone sheet handover).
+        if (HASH.error) {
+          failure = HASH.error === 'access_denied' ? 'Sign-in was cancelled. Tap Continue with Google to try again.' : 'Google couldn’t sign you in (' + HASH.error + '). Try again.';
+          setTimeout(function () { signInFailed(new Error('cancelled')); }, 0);
+        } else {
+          client.auth.signInWithIdToken({ provider: 'google', token: HASH.id_token, nonce: GSTATE[2] }).then(function (r) {
+            if (r && r.error) signInFailed(r.error);
+          }, function (e) { signInFailed(e); });
+          setTimeout(function () { signInFailed(new Error('it took too long. Check your connection')); }, 20000);
+        }
+      } else if (isReturn()) {
         client.auth.initialize().then(function (r) {
           setTimeout(function () { signInFailed(r && r.error); }, 500);
         }, function (e) { signInFailed(e); });
@@ -315,9 +348,22 @@
       var m = /[?&#]error_description=([^&]*)/.exec(location.search + location.hash);
       return m ? 'Sign-in didn’t work: ' + decodeURIComponent(m[1].replace(/\+/g, ' ')) + '. Try again.' : '';
     },
-    signIn: function () {
+    /** True when Continue with Google goes to Google directly (the older way is then offered as a fallback). */
+    directSignIn: function () { return !!GOOGLE_CLIENT_ID; },
+    signIn: function (opts) {
       if (!client) return Promise.reject(new Error('Sign-in could not load. Check your connection and reload.'));
       failure = '';
+      if (GOOGLE_CLIENT_ID && !(opts && opts.classic) && root.crypto && root.crypto.subtle) {
+        var code = newNonce(), raw = newNonce();
+        try { localStorage.setItem(STARTED_KEY, JSON.stringify({ at: new Date().toISOString(), where: where(), nonce: code, to: location.pathname + ' (Google direct)' })); } catch (e) { /* ignore */ }
+        startClaiming();
+        // Google puts the SHA-256 of the nonce in the ID token; Supabase checks it against the raw nonce we pass back.
+        // The raw nonce rides in "state", so a browser sheet with its own storage (iPhone) can still finish.
+        return sha256hex(raw).then(function (hashed) {
+          var q = { client_id: GOOGLE_CLIENT_ID, redirect_uri: returnAddress(), response_type: 'id_token', scope: 'openid email profile', nonce: hashed, state: 'g.' + code + '.' + raw };
+          location.assign('https://accounts.google.com/o/oauth2/v2/auth?' + Object.keys(q).map(function (k) { return k + '=' + encodeURIComponent(q[k]); }).join('&'));
+        });
+      }
       var nonce = newNonce();
       var back = location.origin + location.pathname + '?h=' + nonce;
       try { localStorage.setItem(STARTED_KEY, JSON.stringify({ at: new Date().toISOString(), where: where(), nonce: nonce, to: location.pathname + '?h=…' })); } catch (e) { /* ignore */ }

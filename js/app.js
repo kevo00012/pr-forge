@@ -6,7 +6,7 @@
   'use strict';
 
   var U = PRF.units, M = PRF.metrics, ST = PRF.store, EX = PRF.exercises, P = PRF.plates, IM = PRF.importers, CLOUD = PRF.cloud;
-  var VERSION = '2.2.0';
+  var VERSION = '2.3.0';
 
   var S = ST.load();
   var V = {
@@ -1278,6 +1278,7 @@
         (err ? '<p class="small warn-text">' + esc(err) + '</p>' : '') +
         (navigator.onLine ? '' : '<p class="small warn-text">You’re offline. Signing in needs a connection the first time; after that the app works without one.</p>') +
         '<div class="foot-actions"><button class="btn primary block" data-act="sign-in">Continue with Google</button>' +
+        (CLOUD.directSignIn() ? '<button class="btn ghost block sm" data-act="sign-in-classic">Trouble signing in? Try the other way</button>' : '') +
         '<a class="muted small center privacy-link" href="privacy.html">Privacy: what’s stored and how to delete it</a></div>' +
         diagHtml()) +
       '</section>';
@@ -2414,6 +2415,10 @@
     'sign-in': function () {
       if (!navigator.onLine) { toast('You’re offline. Connect to sign in.', 'warn'); return; }
       CLOUD.signIn().then(function () { render(); }, function (e) { toast(esc(e.message || 'Sign-in didn’t start. Try again.'), 'warn', 3500); });
+    },
+    'sign-in-classic': function () {
+      if (!navigator.onLine) { toast('You’re offline. Connect to sign in.', 'warn'); return; }
+      CLOUD.signIn({ classic: true }).then(function () { render(); }, function (e) { toast(esc(e.message || 'Sign-in didn’t start. Try again.'), 'warn', 3500); });
     },
     'sync-now': function () {
       if (!navigator.onLine) { toast('You’re offline. Changes back up when you reconnect.'); return; }

@@ -403,6 +403,37 @@
     return out;
   }
 
+  /**
+   * Last full week (Monday to Sunday before this one) against the week before it: sessions, working sets, volume,
+   * PRs earned that week (as prEvents), and working sets by group (push / pull / legs / core). Facts only.
+   * Returns null when last week had no finished workout.
+   */
+  function weekRecap(workouts, muscleOf, now) {
+    var thisWs = startOfWeek(now || new Date()), lastWs = addDays(thisWs, -7), prevWs = addDays(thisWs, -14);
+    var group = {};
+    MUSCLE_GROUPS.forEach(function (g) { g.muscles.forEach(function (m) { group[m] = g.id; }); });
+    var tally = function (from, to) {
+      var t = { sessions: 0, sets: 0, volumeLb: 0, groups: { push: 0, pull: 0, legs: 0, core: 0 } };
+      finished(workouts || []).forEach(function (w) {
+        var d = new Date(w.startedAt);
+        if (d < from || d >= to) return;
+        t.sessions++;
+        t.sets += workoutSetCount(w);
+        t.volumeLb += workoutVolumeLb(w);
+        w.exercises.forEach(function (e) {
+          var n = e.sets.filter(isWorkingSet).length;
+          if (n) t.groups[group[muscleOf(e.exerciseId)] || 'core'] += n;
+        });
+      });
+      return t;
+    };
+    var last = tally(lastWs, thisWs);
+    if (!last.sessions) return null;
+    var prev = tally(prevWs, lastWs);
+    var prs = prEvents(workouts).filter(function (e) { var d = new Date(e.date); return d >= lastWs && d < thisWs; });
+    return { weekStart: lastWs.toISOString(), last: last, prev: prev, prs: prs };
+  }
+
   /** Muscles grouped the way most splits are: push, pull, legs, then everything else. */
   var MUSCLE_GROUPS = [
     { id: 'push', name: 'Push', muscles: ['Chest', 'Shoulders', 'Triceps'] },
@@ -719,7 +750,7 @@
     workoutFrequency: workoutFrequency,
     lastSessionFor: lastSessionFor,
     hintFor: hintFor,
-    hintForSet: hintForSet, setsByMuscle: setsByMuscle, trainingSplit: trainingSplit, sessionChanges: sessionChanges, repsAtOrAbove: repsAtOrAbove, MUSCLE_GROUPS: MUSCLE_GROUPS, daysSince: daysSince, progressionFor: progressionFor,
+    hintForSet: hintForSet, setsByMuscle: setsByMuscle, trainingSplit: trainingSplit, sessionChanges: sessionChanges, weekRecap: weekRecap, repsAtOrAbove: repsAtOrAbove, MUSCLE_GROUPS: MUSCLE_GROUPS, daysSince: daysSince, progressionFor: progressionFor,
     strengthTotal: strengthTotal,
     E1RM_MAX_REPS: E1RM_MAX_REPS,
     suggestNext: suggestNext

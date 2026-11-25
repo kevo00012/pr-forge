@@ -418,7 +418,7 @@
       if (/^[=+\-@]/.test(s)) s = "'" + s;                     // never a formula in a spreadsheet
       return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
     };
-    var rows = [['Date', 'Time', 'Workout', 'Exercise', 'Set', 'Warm-up', 'Weight', 'Unit', 'Reps', 'Seconds', 'RPE', 'Duration (min)', 'Imported']];
+    var rows = [['Date', 'Time', 'Workout', 'Exercise', 'Set', 'Warm-up', 'Weight', 'Unit', 'Reps', 'Seconds', 'RPE', 'Duration (min)', 'Imported', 'Workout note']];
     workouts.slice().sort(function (a, b) { return a.startedAt < b.startedAt ? -1 : 1; }).forEach(function (w) {
       var t = new Date(w.startedAt);
       var date = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
@@ -427,7 +427,7 @@
       w.exercises.forEach(function (e) {
         e.sets.filter(function (s) { return s.done; }).forEach(function (s, i) {
           rows.push([date, time, w.name, nameOf(e.exerciseId), i + 1, s.warmup ? 'yes' : '', s.weight == null ? '' : s.weight, w.unit,
-            s.reps == null ? '' : s.reps, s.seconds == null ? '' : s.seconds, s.rpe == null ? '' : s.rpe, mins, w.imported ? 'yes' : '']);
+            s.reps == null ? '' : s.reps, s.seconds == null ? '' : s.seconds, s.rpe == null ? '' : s.rpe, mins, w.imported ? 'yes' : '', w.note || '']);
         });
       });
     });
